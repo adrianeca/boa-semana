@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Boa Semana – BRASAS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy-900: #0a1628;
+  --navy-800: #0f2035;
+  --navy-700: #162d4a;
+  --navy-600: #1e3a5f;
+  --navy-500: #2a4d76;
+  --navy-400: #3d6b99;
+  --navy-300: #5a8aba;
+  --navy-200: #89afd4;
+  --navy-100: #c0d4e9;
+  --red-400:  #ef6370;
+  --green-400: #4ade80;
+  --white: #ffffff;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--navy-900); color: var(--white); min-height: 100vh; line-height: 1.5; }
+
+/* Page */
+#page { max-width: 1260px; margin: 0 auto; padding: 32px 28px 72px; }
+
+/* Header */
+.page-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 28px; flex-wrap: wrap; }
+.header-logo img { height: 48px; width: auto; object-fit: contain; }
+.header-title { text-align: center; flex: 1; }
+.header-title h1 { font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 700; letter-spacing: -.02em; }
+.header-title p { font-size: .82rem; color: var(--navy-200); margin-top: 4px; font-style: italic; }
+.header-meta { text-align: right; font-size: .78rem; color: var(--navy-300); min-width: 100px; }
+.header-meta strong { display: block; color: var(--navy-100); font-size: .85rem; }
+
+/* Unit selector */
+#unitSelector { display: none; margin-bottom: 24px; }
+.unit-select {
+  background: var(--navy-700);
+  border: 1.5px solid rgba(255,255,255,.12);
+  color: var(--white);
+  border-radius: 8px;
+  padding: 8px 36px 8px 14px;
+  font-size: .85rem; font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2389afd4' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  min-width: 200px;
+  transition: border-color .15s;
+}
+.unit-select:hover, .unit-select:focus { border-color: rgba(255,255,255,.3); outline: none; }
+.unit-select option { background: var(--navy-800); }
+
+/* Divider */
+.section-divider { height: 1px; background: rgba(255,255,255,.08); margin: 28px 0; }
+
+/* Section title */
+.section-title {
+  text-align: center; font-size: .78rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .07em; color: var(--navy-100);
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07);
+  border-radius: var(--radius-md); padding: 10px 20px; margin-bottom: 16px;
+}
+
+/* KPI Row */
+.kpi-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.kpi-group { background: var(--navy-800); border: 1px solid rgba(255,255,255,.07); border-radius: var(--radius-lg); overflow: hidden; }
+.kpi-group-title { text-align: center; padding: 11px 16px 9px; font-size: .78rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--navy-100); background: rgba(255,255,255,.04); border-bottom: 1px solid rgba(255,255,255,.07); }
+.kpi-cards { display: grid; grid-template-columns: 1fr 1fr 1fr; }
+.kpi-card { padding: 16px 14px 18px; border-right: 1px solid rgba(255,255,255,.06); }
+.kpi-card:last-child { border-right: none; }
+.kpi-card-label { font-size: .67rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--navy-200); margin-bottom: 8px; }
+.kpi-card-value { font-size: 1.65rem; font-weight: 700; line-height: 1; letter-spacing: -.02em; }
+.kpi-card-value.neg { color: var(--red-400); }
+.kpi-card-badge { display: inline-flex; align-items: center; gap: 3px; margin-top: 6px; font-size: .72rem; font-weight: 600; padding: 2px 7px; border-radius: 20px; }
+.kpi-card-badge.up   { background: rgba(74,222,128,.15);  color: var(--green-400); }
+.kpi-card-badge.down { background: rgba(239,99,112,.15);  color: var(--red-400);   }
+.kpi-card-badge.zero { background: rgba(255,255,255,.08); color: var(--navy-200);  }
+.kpi-sparkline { margin-top: 8px; width: 100%; height: 32px; display: block; }
+
+/* Inadimplência Total */
+.inad-total-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
+.inad-kpi { background: var(--navy-800); border: 1px solid rgba(255,255,255,.07); border-radius: var(--radius-lg); padding: 22px 24px; text-align: center; }
+.inad-kpi-label { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--navy-200); margin-bottom: 12px; }
+.inad-kpi-value { font-size: 1.75rem; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+
+/* Year cards */
+.years-grid { display: flex; flex-wrap: wrap; gap: 16px; }
+.year-card { background: var(--navy-800); border: 1px solid rgba(255,255,255,.07); border-radius: var(--radius-lg); overflow: hidden; flex: 1; min-width: 180px; }
+.year-card.full { min-width: 240px; }
+.year-card.pre { min-width: 180px; background: var(--navy-700); }
+.year-card-header { text-align: center; background: rgba(255,255,255,.06); padding: 10px 16px 8px; font-size: .78rem; font-weight: 700; letter-spacing: .04em; color: var(--navy-100); border-bottom: 1px solid rgba(255,255,255,.07); }
+.year-card.pre .year-card-header { background: rgba(255,255,255,.08); color: var(--navy-100); font-style: italic; }
+.year-card-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.year-card-body.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+.year-metric { display: flex; flex-direction: column; gap: 2px; }
+.year-metric-label { font-size: .65rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--navy-300); }
+.year-metric-value { font-size: 1.1rem; font-weight: 700; line-height: 1.1; }
+.year-metric-value.accent { color: var(--red-400); }
+
+/* Skeleton */
+.skeleton { background: linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(255,255,255,.08) 50%,rgba(255,255,255,.04) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 6px; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* Error */
+.error-banner { background: rgba(239,99,112,.15); border: 1px solid rgba(239,99,112,.3); border-radius: var(--radius-md); padding: 16px 20px; color: #fca5a5; font-size: .85rem; text-align: center; }
+
+/* Placeholder */
+.placeholder-section { background: var(--navy-800); border: 1px solid rgba(255,255,255,.07); border-radius: var(--radius-lg); padding: 32px; text-align: center; color: var(--navy-300); font-size: .85rem; }
+
+/* Responsive */
+@media (max-width: 900px) {
+  #page { padding: 20px 16px 48px; }
+  .kpi-row, .inad-total-row { grid-template-columns: 1fr; }
+  .page-header { flex-direction: column; text-align: center; }
+  .header-meta { text-align: center; }
+}
+@media (max-width: 480px) {
+  .kpi-cards { grid-template-columns: 1fr; }
+  .kpi-card { border-right: none; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .kpi-card:last-child { border-bottom: none; }
+  .year-card.full .year-card-body.grid2 { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div id="page">
+
+  <header class="page-header">
+    <div class="header-logo">
+      <img src="https://lh3.googleusercontent.com/d/1F-0NV036KUExaEGIMgLbUHqE-HtYyXvK" alt="BRASAS English Course">
+    </div>
+    <div class="header-title">
+      <h1>Boa semana, <?= apelido ?>!</h1>
+      <p>Comparações com o mesmo período no ano anterior</p>
+    </div>
+    <div class="header-meta">
+      <strong id="headerPeriodo">—</strong>
+      <span id="headerData"></span>
+    </div>
+  </header>
+
+  <!-- Seletor de unidade -->
+  <div id="unitSelector">
+    <select id="unitSelect" class="unit-select"></select>
+  </div>
+
+  <!-- KPIs Matrículas / Cancelados / Saldo -->
+  <div class="kpi-row" id="kpiRow">
+    <div class="kpi-group" style="min-height:120px"><div class="skeleton" style="height:100%;border-radius:16px;min-height:120px"></div></div>
+    <div class="kpi-group" style="min-height:120px"><div class="skeleton" style="height:100%;border-radius:16px;min-height:120px"></div></div>
+    <div class="kpi-group" style="min-height:120px"><div class="skeleton" style="height:100%;border-radius:16px;min-height:120px"></div></div>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <div class="section-title">Inadimplência Total</div>
+  <div class="inad-total-row" id="inadTotal">
+    <div class="inad-kpi"><div class="skeleton" style="height:60px;border-radius:12px"></div></div>
+    <div class="inad-kpi"><div class="skeleton" style="height:60px;border-radius:12px"></div></div>
+    <div class="inad-kpi"><div class="skeleton" style="height:60px;border-radius:12px"></div></div>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <div class="section-title">Inadimplência por Ano</div>
+  <div class="years-grid" id="yearsGrid">
+    <div class="placeholder-section" style="width:100%">Carregando dados de inadimplência…</div>
+  </div>
+
+  <div class="section-divider"></div>
+  <div class="placeholder-section">📈 Gráficos de inadimplência acumulada por semana · em breve</div>
+  <div class="section-divider"></div>
+  <div class="placeholder-section">🎓 Class Average · em breve</div>
+  <div class="section-divider"></div>
+  <div class="placeholder-section">⭐ NPS · em breve</div>
+
+</div>
+
+<script>
+const SESSION_TOKEN = '<?= sessionToken ?>';
+const UNIDADES      = (function(){ try{ var v=<?!= unidades ?>; return Array.isArray(v)?v:null; }catch(e){ return null; } }());
+const ALL_UNITS     = (function(){ try{ return <?!= allUnits ?>; }catch(e){ return []; } }());
+
+const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+// Unidade selecionada: null = todas
+let selectedUnit = null;
+
+// ── Seletor de unidade ────────────────────────────────────────
+function initUnitSelector() {
+  const unitList = UNIDADES || ALL_UNITS;
+  if (!unitList || unitList.length < 1) return;
+
+  const sel    = document.getElementById('unitSelector');
+  const select = document.getElementById('unitSelect');
+  sel.style.display = 'block';
+
+  const opt0 = document.createElement('option');
+  opt0.value = ''; opt0.textContent = 'Todas as unidades';
+  select.appendChild(opt0);
+
+  unitList.forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u; opt.textContent = u;
+    select.appendChild(opt);
+  });
+
+  select.onchange = () => {
+    selectedUnit = select.value || null;
+    reloadData();
+  };
+}
+
+// ── Carregamento de dados (duas chamadas paralelas) ───────────
+function reloadData() {
+  showKpiSkeletons();
+  showInadSkeletons();
+
+  google.script.run
+    .withSuccessHandler(onKpiData)
+    .withFailureHandler(e => showError('kpiRow', e))
+    .getKpiOnly(SESSION_TOKEN, selectedUnit);
+
+  google.script.run
+    .withSuccessHandler(onInadData)
+    .withFailureHandler(e => { showError('inadTotal', e); showError('yearsGrid', e); })
+    .getInadOnly(SESSION_TOKEN, selectedUnit);
+}
+
+function showKpiSkeletons() {
+  document.getElementById('kpiRow').innerHTML = `
+    <div class="kpi-group" style="min-height:120px"><div class="skeleton" style="height:100%;min-height:120px;border-radius:16px"></div></div>
+    <div class="kpi-group" style="min-height:120px"><div class="skeleton" style="height:100%;min-height:120px;border-radius:16px"></div></div>
+    <div class="kpi-group" style="min-height:120px"><div class="skeleton" style="height:100%;min-height:120px;border-radius:16px"></div></div>`;
+}
+
+function showInadSkeletons() {
+  document.getElementById('inadTotal').innerHTML = `
+    <div class="inad-kpi"><div class="skeleton" style="height:60px;border-radius:12px"></div></div>
+    <div class="inad-kpi"><div class="skeleton" style="height:60px;border-radius:12px"></div></div>
+    <div class="inad-kpi"><div class="skeleton" style="height:60px;border-radius:12px"></div></div>`;
+  document.getElementById('yearsGrid').innerHTML =
+    '<div class="placeholder-section" style="width:100%">Carregando…</div>';
+}
+
+function showError(id, err) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML =
+    `<div class="error-banner" style="grid-column:1/-1">Erro: ${(err && err.message) || err}</div>`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initUnitSelector();
+  reloadData();
+});
+
+function onKpiData(jsonStr) {
+  try {
+    const d = JSON.parse(jsonStr);
+    if (!d.ok) { showError('kpiRow', { message: d.error }); return; }
+    _renderKpi(d.kpi);
+  } catch(e) { showError('kpiRow', e); }
+}
+
+function onInadData(jsonStr) {
+  try {
+    const d = JSON.parse(jsonStr);
+    if (!d.ok) { showError('inadTotal', { message: d.error }); showError('yearsGrid', { message: d.error }); return; }
+    _renderInad(d.inad);
+  } catch(e) { showError('inadTotal', e); showError('yearsGrid', e); }
+}
+
+function _renderKpi(d) {
+  const p = d.periodo;
+  document.getElementById('headerPeriodo').textContent = `${MESES_FULL[p.mes - 1]} ${p.ano}`;
+  document.getElementById('headerData').textContent    = `${p.ano} · T${p.trimestre}`;
+
+  const groups = [
+    { key: 'matriculas', label: 'Matrículas', data: d.matriculas, spark: d.sparkline, sk: 'mat' },
+    { key: 'cancelados', label: 'Cancelados',  data: d.cancelados, spark: d.sparkline, sk: 'can' },
+    { key: 'saldo',      label: 'Saldo',        data: d.saldo,      spark: null },
+  ];
+
+  const row = document.getElementById('kpiRow');
+  row.innerHTML = '';
+  groups.forEach(g => {
+    const div = document.createElement('div');
+    div.className = 'kpi-group';
+    div.innerHTML = `<div class="kpi-group-title">${g.label}</div>
+      <div class="kpi-cards">
+        ${kpiCard(g.key,'Este Mês',       g.data.mes,'mes', g.spark,g.sk)}
+        ${kpiCard(g.key,'Este Trimestre', g.data.tri,'tri', g.spark,g.sk)}
+        ${kpiCard(g.key,'Este Ano',       g.data.ano,'ano', g.spark,g.sk)}
+      </div>`;
+    row.appendChild(div);
+  });
+
+  groups.forEach(g => {
+    if (!g.spark) return;
+    ['mes','tri','ano'].forEach(period => {
+      const c = document.getElementById(`spark-${g.key}-${period}`);
+      if (c) drawSparkline(c, g.spark, g.sk);
+    });
+  });
+}
+
+function kpiCard(groupKey, label, data, period, sparkline, sparkKey) {
+  const val   = data ? data.val : 0;
+  const pct   = data ? data.pct : null;
+  const isNeg = val < 0;
+  const spark = (sparkline && sparkKey)
+    ? `<canvas class="kpi-sparkline" id="spark-${groupKey}-${period}"></canvas>` : '';
+  return `<div class="kpi-card">
+    <div class="kpi-card-label">${label}</div>
+    <div class="kpi-card-value${isNeg?' neg':''}">${fmtInt(val)}</div>
+    ${mkBadge(pct)}${spark}
+  </div>`;
+}
+
+function mkBadge(pct) {
+  if (pct === null || pct === undefined) return '';
+  if (+pct === 0) return `<div class="kpi-card-badge zero">0,0%</div>`;
+  const cls  = pct > 0 ? 'up' : 'down';
+  const sign = pct > 0 ? '▲' : '▼';
+  return `<div class="kpi-card-badge ${cls}">${sign} ${Math.abs(pct).toFixed(1).replace('.',',')}%</div>`;
+}
+
+function _renderInad(d) {
+  document.getElementById('inadTotal').innerHTML = `
+    ${inadKpi('Valor Previsto',        fmtBRL(d.total.valorPrevisto))}
+    ${inadKpi('Quantidade de Títulos', fmtInt(d.total.titulos))}
+    ${inadKpi('Ticket Médio',          fmtBRL(d.total.ticketMedio))}`;
+
+  const grid  = document.getElementById('yearsGrid');
+  const years = Object.keys(d.yearCards);
+  if (!years.length) {
+    grid.innerHTML = '<div class="placeholder-section" style="width:100%">Nenhum dado encontrado.</div>';
+    return;
+  }
+
+  grid.innerHTML = '';
+  const sorted = years.sort((a, b) => {
+    if (a === 'pre2022') return -1;
+    if (b === 'pre2022') return  1;
+    return +a - +b;
+  });
+
+  sorted.forEach(yr => {
+    const yc  = d.yearCards[yr];
+    const isPre = yr === 'pre2022';
+    const hasI  = yc.inadpf   !== null;
+    const hasC  = yc.cobrafix !== null;
+
+    const card = document.createElement('div');
+    card.className = 'year-card' + (hasI ? ' full' : '') + (isPre ? ' pre' : '');
+
+    const label = isPre ? 'Antes de 2022' : yr;
+    let body = '';
+    if (hasI && hasC) {
+      body = `<div class="year-card-body grid2">
+        ${ym('Inad. Acumulada',       fmtBRL(yc.inadpf.inadAcumulada),   true)}
+        ${ym('Títulos a Receber',     fmtInt(yc.inadpf.titulosAReceber))}
+        ${ym('Títulos Cobrafix',      fmtInt(yc.cobrafix.titulos))}
+        ${ym('Ticket Médio',          fmtBRL(yc.inadpf.ticketMedio),     true)}
+        ${ym('Inadimplência %',       fmtPct(yc.inadpf.pctInad))}
+        ${ym('Valor Títulos Cobrafix',fmtBRL(yc.cobrafix.valor))}
+      </div>`;
+    } else if (hasI) {
+      body = `<div class="year-card-body grid2">
+        ${ym('Inad. Acumulada',  fmtBRL(yc.inadpf.inadAcumulada),   true)}
+        ${ym('Títulos a Receber',fmtInt(yc.inadpf.titulosAReceber))}
+        ${ym('Ticket Médio',     fmtBRL(yc.inadpf.ticketMedio),     true)}
+        ${ym('Inadimplência %',  fmtPct(yc.inadpf.pctInad))}
+      </div>`;
+    } else if (hasC) {
+      body = `<div class="year-card-body">
+        ${ym('Títulos Cobrafix',       fmtInt(yc.cobrafix.titulos))}
+        ${ym('Valor Títulos Cobrafix', fmtBRL(yc.cobrafix.valor))}
+      </div>`;
+    }
+
+    card.innerHTML = `<div class="year-card-header">${label}</div>${body}`;
+    grid.appendChild(card);
+  });
+}
+
+function inadKpi(label, value) {
+  return `<div class="inad-kpi"><div class="inad-kpi-label">${label}</div><div class="inad-kpi-value">${value}</div></div>`;
+}
+
+function ym(label, value, accent) {
+  return `<div class="year-metric"><div class="year-metric-label">${label}</div><div class="year-metric-value${accent?' accent':''}">${value}</div></div>`;
+}
+
+// ── Sparkline ─────────────────────────────────────────────────
+function drawSparkline(canvas, data, key) {
+  const vals = data.map(d => d[key]);
+  const max  = Math.max(...vals, 1);
+  const w = canvas.offsetWidth || 100, h = canvas.offsetHeight || 32;
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const pts = vals.map((v, i) => ({
+    x: (i / (vals.length - 1)) * (w - 4) + 2,
+    y: h - 4 - (v / max) * (h - 8),
+  }));
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, 'rgba(239,99,112,.35)');
+  grad.addColorStop(1, 'rgba(239,99,112,0)');
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, h);
+  pts.forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.lineTo(pts[pts.length - 1].x, h);
+  ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+  ctx.beginPath();
+  pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.strokeStyle = 'rgba(239,99,112,.8)'; ctx.lineWidth = 1.5; ctx.stroke();
+}
+
+// ── Formatters ────────────────────────────────────────────────
+function fmtInt(n)  { return (n === null || n === undefined) ? '—' : Math.round(n).toLocaleString('pt-BR'); }
+function fmtBRL(n)  { return (n === null || n === undefined) ? '—' : 'R$ ' + Number(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtPct(n)  { return (n === null || n === undefined) ? '—' : Number(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) + '%'; }
+</script>
+</body>
+</html>
