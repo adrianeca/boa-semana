@@ -38,6 +38,17 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--navy
 .header-meta { text-align: right; font-size: .78rem; color: var(--navy-300); min-width: 100px; }
 .header-meta strong { display: block; color: var(--navy-100); font-size: .85rem; }
 
+/* Hub button */
+.hub-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--navy-700); border: 1.5px solid rgba(255,255,255,.12);
+  color: var(--navy-100); text-decoration: none;
+  border-radius: 8px; padding: 7px 14px 7px 12px;
+  font-size: .78rem; font-weight: 500; white-space: nowrap;
+  transition: border-color .15s, background .15s;
+}
+.hub-btn:hover { border-color: rgba(255,255,255,.3); background: var(--navy-600); }
+
 /* Unit selector */
 #unitSelector { display: none; margin-bottom: 24px; }
 .unit-select {
@@ -75,7 +86,7 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--navy
 .kpi-group { background: var(--navy-800); border: 1px solid rgba(255,255,255,.07); border-radius: var(--radius-lg); overflow: hidden; }
 .kpi-group-title { text-align: center; padding: 11px 16px 9px; font-size: .78rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--navy-100); background: rgba(255,255,255,.04); border-bottom: 1px solid rgba(255,255,255,.07); }
 .kpi-cards { display: grid; grid-template-columns: 1fr 1fr 1fr; }
-.kpi-card { padding: 16px 14px 18px; border-right: 1px solid rgba(255,255,255,.06); }
+.kpi-card { padding: 16px 14px 18px; border-right: 1px solid rgba(255,255,255,.06); text-align: center; }
 .kpi-card:last-child { border-right: none; }
 .kpi-card-label { font-size: .67rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--navy-200); margin-bottom: 8px; }
 .kpi-card-value { font-size: 1.65rem; font-weight: 700; line-height: 1; letter-spacing: -.02em; }
@@ -93,18 +104,48 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--navy
 .inad-kpi-value { font-size: 1.75rem; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
 
 /* Year cards */
-.years-grid { display: flex; flex-wrap: wrap; gap: 16px; }
-.year-card { background: var(--navy-800); border: 1px solid rgba(255,255,255,.07); border-radius: var(--radius-lg); overflow: hidden; flex: 1; min-width: 180px; }
-.year-card.full { min-width: 240px; }
-.year-card.pre { min-width: 180px; background: var(--navy-700); }
+.years-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.year-card { background: var(--navy-800); border: 1px solid rgba(255,255,255,.07); border-radius: var(--radius-lg); overflow: hidden; }
+.year-card.pre { background: var(--navy-700); }
 .year-card-header { text-align: center; background: rgba(255,255,255,.06); padding: 10px 16px 8px; font-size: .78rem; font-weight: 700; letter-spacing: .04em; color: var(--navy-100); border-bottom: 1px solid rgba(255,255,255,.07); }
 .year-card.pre .year-card-header { background: rgba(255,255,255,.08); color: var(--navy-100); font-style: italic; }
-.year-card-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
-.year-card-body.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
-.year-metric { display: flex; flex-direction: column; gap: 2px; }
+.year-card-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; align-items: center; text-align: center; }
+.year-card-body.grid2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 14px 16px; }
+.year-metric { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; text-align: center; }
 .year-metric-label { font-size: .65rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--navy-300); }
-.year-metric-value { font-size: 1.1rem; font-weight: 700; line-height: 1.1; }
+.year-metric-value { font-size: 1.1rem; font-weight: 700; line-height: 1.1; overflow-wrap: break-word; }
 .year-metric-value.accent { color: var(--red-400); }
+
+/* Inadimplência semanal */
+.weekly-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.weekly-grid-single { grid-template-columns: 1fr; }
+.weekly-card { background: var(--navy-800); border: 1px solid rgba(255,255,255,.07); border-radius: var(--radius-lg); padding: 18px 20px 12px; }
+.weekly-card-title { text-align: center; font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--navy-100); margin-bottom: 10px; }
+.weekly-chart { width: 100%; height: 220px; display: block; }
+
+/* NPS */
+.nps-meters-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
+.nps-meter-card { background: var(--navy-800); border: 1px solid rgba(255,255,255,.07); border-radius: var(--radius-lg); padding: 20px 22px; text-align: center; }
+.nps-meter-label { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--navy-200); margin-bottom: 8px; }
+.nps-meter-value { font-size: 1.9rem; font-weight: 700; letter-spacing: -.02em; margin-bottom: 14px; }
+.nps-meter-track { position: relative; height: 8px; border-radius: 4px; background: rgba(255,255,255,.08); }
+.nps-meter-zero { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: rgba(255,255,255,.25); }
+.nps-meter-fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
+.nps-meter-fill.pos { background: var(--green-400); }
+.nps-meter-fill.neg { background: var(--red-400); }
+.nps-meter-scale { display: flex; justify-content: space-between; font-size: .62rem; color: var(--navy-300); margin-top: 6px; }
+
+.nps-last-response { text-align: center; font-size: .8rem; color: var(--navy-200); margin: 18px 0; }
+.nps-last-response strong { color: var(--navy-100); }
+
+.nps-table-wrap { overflow-x: auto; background: var(--navy-800); border: 1px solid rgba(255,255,255,.07); border-radius: var(--radius-lg); }
+.nps-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.nps-table th { text-align: left; padding: 10px 14px; font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--navy-200); background: rgba(255,255,255,.04); border-bottom: 1px solid rgba(255,255,255,.07); white-space: nowrap; }
+.nps-table td { padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.05); vertical-align: top; }
+.nps-table tr:last-child td { border-bottom: none; }
+.nps-table .nps-nota { font-weight: 700; text-align: center; }
+.nps-table .nps-nota.promoter { color: var(--green-400); }
+.nps-table .nps-nota.detractor { color: var(--red-400); }
 
 /* Skeleton */
 .skeleton { background: linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(255,255,255,.08) 50%,rgba(255,255,255,.04) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 6px; }
@@ -120,6 +161,8 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--navy
 @media (max-width: 900px) {
   #page { padding: 20px 16px 48px; }
   .kpi-row, .inad-total-row { grid-template-columns: 1fr; }
+  .years-grid { grid-template-columns: repeat(2, 1fr); }
+  .nps-meters-row { grid-template-columns: 1fr; }
   .page-header { flex-direction: column; text-align: center; }
   .header-meta { text-align: center; }
 }
@@ -127,7 +170,9 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--navy
   .kpi-cards { grid-template-columns: 1fr; }
   .kpi-card { border-right: none; border-bottom: 1px solid rgba(255,255,255,.06); }
   .kpi-card:last-child { border-bottom: none; }
+  .years-grid { grid-template-columns: 1fr; }
   .year-card.full .year-card-body.grid2 { grid-template-columns: 1fr; }
+  .weekly-grid { grid-template-columns: 1fr; }
 }
 </style>
 </head>
@@ -146,6 +191,9 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--navy
     <div class="header-meta">
       <strong id="headerPeriodo">—</strong>
       <span id="headerData"></span>
+      <div style="margin-top:8px">
+        <a class="hub-btn" href="<?= hubUrl ?>">← Voltar ao Hub</a>
+      </div>
     </div>
   </header>
 
@@ -178,11 +226,37 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--navy
   </div>
 
   <div class="section-divider"></div>
-  <div class="placeholder-section">📈 Gráficos de inadimplência acumulada por semana · em breve</div>
+
+  <div class="section-title">Inadimplência Acumulada Semanal</div>
+  <div class="weekly-grid" id="weeklyGrid">
+    <div class="weekly-card"><div class="skeleton" style="height:220px;border-radius:12px"></div></div>
+    <div class="weekly-card"><div class="skeleton" style="height:220px;border-radius:12px"></div></div>
+  </div>
+
   <div class="section-divider"></div>
-  <div class="placeholder-section">🎓 Class Average · em breve</div>
+
+  <div class="section-title">Class Average Semanal</div>
+  <div class="inad-total-row" id="classAvgCards">
+    <div class="inad-kpi"><div class="skeleton" style="height:60px;border-radius:12px"></div></div>
+    <div class="inad-kpi"><div class="skeleton" style="height:60px;border-radius:12px"></div></div>
+    <div class="inad-kpi"><div class="skeleton" style="height:60px;border-radius:12px"></div></div>
+  </div>
+  <div class="weekly-grid weekly-grid-single" id="classAvgGrid" style="margin-top:16px">
+    <div class="weekly-card"><div class="skeleton" style="height:220px;border-radius:12px"></div></div>
+  </div>
+
   <div class="section-divider"></div>
-  <div class="placeholder-section">⭐ NPS · em breve</div>
+
+  <div class="section-title">NPS</div>
+  <div class="nps-meters-row" id="npsMeters">
+    <div class="nps-meter-card"><div class="skeleton" style="height:110px;border-radius:12px"></div></div>
+    <div class="nps-meter-card"><div class="skeleton" style="height:110px;border-radius:12px"></div></div>
+    <div class="nps-meter-card"><div class="skeleton" style="height:110px;border-radius:12px"></div></div>
+  </div>
+  <div class="nps-last-response" id="npsLastResponse"></div>
+  <div class="nps-table-wrap" id="npsTable">
+    <div class="skeleton" style="height:160px;border-radius:12px"></div>
+  </div>
 
 </div>
 
@@ -222,10 +296,12 @@ function initUnitSelector() {
   };
 }
 
-// ── Carregamento de dados (duas chamadas paralelas) ───────────
+// ── Carregamento de dados (chamadas paralelas) ────────────────
 function reloadData() {
   showKpiSkeletons();
   showInadSkeletons();
+  showClassAvgSkeleton();
+  showNpsSkeleton();
 
   google.script.run
     .withSuccessHandler(onKpiData)
@@ -234,8 +310,18 @@ function reloadData() {
 
   google.script.run
     .withSuccessHandler(onInadData)
-    .withFailureHandler(e => { showError('inadTotal', e); showError('yearsGrid', e); })
+    .withFailureHandler(e => { showError('inadTotal', e); showError('yearsGrid', e); showError('weeklyGrid', e); })
     .getInadOnly(SESSION_TOKEN, selectedUnit);
+
+  google.script.run
+    .withSuccessHandler(onClassAverageData)
+    .withFailureHandler(e => { showError('classAvgCards', e); showError('classAvgGrid', e); })
+    .getClassAverageOnly(SESSION_TOKEN, selectedUnit);
+
+  google.script.run
+    .withSuccessHandler(onNpsData)
+    .withFailureHandler(e => { showError('npsMeters', e); showError('npsTable', e); })
+    .getNpsOnly(SESSION_TOKEN, selectedUnit);
 }
 
 function showKpiSkeletons() {
@@ -252,6 +338,27 @@ function showInadSkeletons() {
     <div class="inad-kpi"><div class="skeleton" style="height:60px;border-radius:12px"></div></div>`;
   document.getElementById('yearsGrid').innerHTML =
     '<div class="placeholder-section" style="width:100%">Carregando…</div>';
+  document.getElementById('weeklyGrid').innerHTML = `
+    <div class="weekly-card"><div class="skeleton" style="height:220px;border-radius:12px"></div></div>
+    <div class="weekly-card"><div class="skeleton" style="height:220px;border-radius:12px"></div></div>`;
+}
+
+function showClassAvgSkeleton() {
+  document.getElementById('classAvgCards').innerHTML = `
+    <div class="inad-kpi"><div class="skeleton" style="height:60px;border-radius:12px"></div></div>
+    <div class="inad-kpi"><div class="skeleton" style="height:60px;border-radius:12px"></div></div>
+    <div class="inad-kpi"><div class="skeleton" style="height:60px;border-radius:12px"></div></div>`;
+  document.getElementById('classAvgGrid').innerHTML =
+    '<div class="weekly-card"><div class="skeleton" style="height:220px;border-radius:12px"></div></div>';
+}
+
+function showNpsSkeleton() {
+  document.getElementById('npsMeters').innerHTML = `
+    <div class="nps-meter-card"><div class="skeleton" style="height:110px;border-radius:12px"></div></div>
+    <div class="nps-meter-card"><div class="skeleton" style="height:110px;border-radius:12px"></div></div>
+    <div class="nps-meter-card"><div class="skeleton" style="height:110px;border-radius:12px"></div></div>`;
+  document.getElementById('npsLastResponse').innerHTML = '';
+  document.getElementById('npsTable').innerHTML = '<div class="skeleton" style="height:160px;border-radius:12px"></div>';
 }
 
 function showError(id, err) {
@@ -276,9 +383,113 @@ function onKpiData(jsonStr) {
 function onInadData(jsonStr) {
   try {
     const d = JSON.parse(jsonStr);
-    if (!d.ok) { showError('inadTotal', { message: d.error }); showError('yearsGrid', { message: d.error }); return; }
+    if (!d.ok) {
+      showError('inadTotal', { message: d.error });
+      showError('yearsGrid', { message: d.error });
+      showError('weeklyGrid', { message: d.error });
+      return;
+    }
     _renderInad(d.inad);
-  } catch(e) { showError('inadTotal', e); showError('yearsGrid', e); }
+  } catch(e) { showError('inadTotal', e); showError('yearsGrid', e); showError('weeklyGrid', e); }
+}
+
+function onClassAverageData(jsonStr) {
+  try {
+    const d = JSON.parse(jsonStr);
+    if (!d.ok) { showError('classAvgCards', { message: d.error }); showError('classAvgGrid', { message: d.error }); return; }
+    _renderClassAverage(d.classAverage);
+  } catch(e) { showError('classAvgCards', e); showError('classAvgGrid', e); }
+}
+
+function _renderClassAverage(data) {
+  const cards = data && data.cards;
+  document.getElementById('classAvgCards').innerHTML = `
+    ${inadKpi('Class Average',          fmtClassAvg(cards && cards.atual))}
+    ${inadKpi('Class Average Regular',  fmtClassAvg(cards && cards.regular))}
+    ${inadKpi('Class Average Parceiro', fmtClassAvg(cards && cards.parceiro))}`;
+
+  const grid = document.getElementById('classAvgGrid');
+  if (!data || !data.points || !data.points.length) {
+    grid.innerHTML = '<div class="placeholder-section" style="grid-column:1/-1">Sem dados de Class Average encontrados.</div>';
+    return;
+  }
+  grid.innerHTML = '<div class="weekly-card"><canvas class="weekly-chart" id="classAvgChart"></canvas></div>';
+  drawBarChart(document.getElementById('classAvgChart'), data.points, {
+    color: 'rgba(90,138,186,.8)',
+    formatValue: fmtClassAvg,
+  });
+}
+
+function onNpsData(jsonStr) {
+  try {
+    const d = JSON.parse(jsonStr);
+    if (!d.ok) { showError('npsMeters', { message: d.error }); showError('npsTable', { message: d.error }); return; }
+    _renderNps(d.nps);
+  } catch(e) { showError('npsMeters', e); showError('npsTable', e); }
+}
+
+function _renderNps(d) {
+  const meters = [
+    { label: 'Adults',           data: d && d.adults },
+    { label: 'Kids',              data: d && d.kids },
+    { label: 'Mudança de Nível',  data: d && d.mudancaNivel },
+  ];
+  document.getElementById('npsMeters').innerHTML = meters.map(m => npsMeterCard(m.label, m.data)).join('');
+
+  document.getElementById('npsLastResponse').innerHTML = (d && d.lastResponse)
+    ? `Data da última resposta: <strong>${fmtDateBR(d.lastResponse)}</strong>`
+    : '';
+
+  renderNpsTable(d && d.recent);
+}
+
+function npsMeterCard(label, data) {
+  const val = (data && data.nps !== null && data.nps !== undefined) ? data.nps : null;
+  const valLabel = val === null ? '—' : val.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+  let fillHtml = '';
+  if (val !== null) {
+    const clamped = Math.max(-100, Math.min(100, val));
+    const pct   = (clamped + 100) / 200 * 100; // 0 a 100, 50 = zero
+    const cls   = clamped >= 0 ? 'pos' : 'neg';
+    const left  = clamped >= 0 ? 50 : pct;
+    const width = Math.abs(pct - 50);
+    fillHtml = `<div class="nps-meter-fill ${cls}" style="left:${left}%;width:${width}%"></div>`;
+  }
+
+  return `<div class="nps-meter-card">
+    <div class="nps-meter-label">${_esc(label)}</div>
+    <div class="nps-meter-value">${valLabel}</div>
+    <div class="nps-meter-track">
+      <div class="nps-meter-zero"></div>
+      ${fillHtml}
+    </div>
+    <div class="nps-meter-scale"><span>-100</span><span>0</span><span>100</span></div>
+  </div>`;
+}
+
+function renderNpsTable(rows) {
+  const el = document.getElementById('npsTable');
+  if (!rows || !rows.length) {
+    el.innerHTML = '<div class="placeholder-section">Sem respostas nos últimos 14 dias.</div>';
+    return;
+  }
+  const body = rows.map(r => {
+    const notaCls = r.nota === null ? '' : (r.nota >= 9 ? 'promoter' : (r.nota <= 6 ? 'detractor' : ''));
+    return `<tr>
+      <td>${_esc(r.unidade)}</td>
+      <td>${fmtDateBR(r.data)}</td>
+      <td>${_esc(r.nome)}</td>
+      <td>${_esc(r.book)}</td>
+      <td class="nps-nota ${notaCls}">${r.nota === null ? '—' : r.nota}</td>
+      <td>${_esc(r.motivo)}</td>
+      <td>${_esc(r.criticas)}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table class="nps-table">
+    <thead><tr><th>Unidade</th><th>Data</th><th>Nome</th><th>Book</th><th>Nota</th><th>Motivo do Cancelamento</th><th>Críticas, Sugestões e Elogios</th></tr></thead>
+    <tbody>${body}</tbody>
+  </table>`;
 }
 
 function _renderKpi(d) {
@@ -288,7 +499,7 @@ function _renderKpi(d) {
 
   const groups = [
     { key: 'matriculas', label: 'Matrículas', data: d.matriculas, spark: d.sparkline, sk: 'mat' },
-    { key: 'cancelados', label: 'Cancelados',  data: d.cancelados, spark: d.sparkline, sk: 'can' },
+    { key: 'cancelados', label: 'Cancelados',  data: d.cancelados, spark: d.sparkline, sk: 'can', invert: true },
     { key: 'saldo',      label: 'Saldo',        data: d.saldo,      spark: null },
   ];
 
@@ -299,9 +510,9 @@ function _renderKpi(d) {
     div.className = 'kpi-group';
     div.innerHTML = `<div class="kpi-group-title">${g.label}</div>
       <div class="kpi-cards">
-        ${kpiCard(g.key,'Este Mês',       g.data.mes,'mes', g.spark,g.sk)}
-        ${kpiCard(g.key,'Este Trimestre', g.data.tri,'tri', g.spark,g.sk)}
-        ${kpiCard(g.key,'Este Ano',       g.data.ano,'ano', g.spark,g.sk)}
+        ${kpiCard(g.key,'Este Mês',       g.data.mes,'mes', g.spark,g.sk,g.invert)}
+        ${kpiCard(g.key,'Este Trimestre', g.data.tri,'tri', g.spark,g.sk,g.invert)}
+        ${kpiCard(g.key,'Este Ano',       g.data.ano,'ano', g.spark,g.sk,g.invert)}
       </div>`;
     row.appendChild(div);
   });
@@ -315,7 +526,7 @@ function _renderKpi(d) {
   });
 }
 
-function kpiCard(groupKey, label, data, period, sparkline, sparkKey) {
+function kpiCard(groupKey, label, data, period, sparkline, sparkKey, invert) {
   const val   = data ? data.val : 0;
   const pct   = data ? data.pct : null;
   const isNeg = val < 0;
@@ -324,15 +535,18 @@ function kpiCard(groupKey, label, data, period, sparkline, sparkKey) {
   return `<div class="kpi-card">
     <div class="kpi-card-label">${label}</div>
     <div class="kpi-card-value${isNeg?' neg':''}">${fmtInt(val)}</div>
-    ${mkBadge(pct)}${spark}
+    ${mkBadge(pct, invert)}${spark}
   </div>`;
 }
 
-function mkBadge(pct) {
+// invert=true (Cancelados): número menor que o ano passado é bom (verde), maior é ruim (vermelho)
+function mkBadge(pct, invert) {
   if (pct === null || pct === undefined) return '';
   if (+pct === 0) return `<div class="kpi-card-badge zero">0,0%</div>`;
-  const cls  = pct > 0 ? 'up' : 'down';
-  const sign = pct > 0 ? '▲' : '▼';
+  const isUp   = pct > 0;
+  const isGood = invert ? !isUp : isUp;
+  const cls  = isGood ? 'up' : 'down';
+  const sign = isUp ? '▲' : '▼';
   return `<div class="kpi-card-badge ${cls}">${sign} ${Math.abs(pct).toFixed(1).replace('.',',')}%</div>`;
 }
 
@@ -341,6 +555,8 @@ function _renderInad(d) {
     ${inadKpi('Valor Previsto',        fmtBRL(d.total.valorPrevisto))}
     ${inadKpi('Quantidade de Títulos', fmtInt(d.total.titulos))}
     ${inadKpi('Ticket Médio',          fmtBRL(d.total.ticketMedio))}`;
+
+  _renderWeekly(d.weekly);
 
   const grid  = document.getElementById('yearsGrid');
   const years = Object.keys(d.yearCards);
@@ -372,9 +588,9 @@ function _renderInad(d) {
         ${ym('Inad. Acumulada',       fmtBRL(yc.inadpf.inadAcumulada),   true)}
         ${ym('Títulos a Receber',     fmtInt(yc.inadpf.titulosAReceber))}
         ${ym('Títulos Cobrafix',      fmtInt(yc.cobrafix.titulos))}
-        ${ym('Ticket Médio',          fmtBRL(yc.inadpf.ticketMedio),     true)}
-        ${ym('Inadimplência %',       fmtPct(yc.inadpf.pctInad))}
         ${ym('Valor Títulos Cobrafix',fmtBRL(yc.cobrafix.valor))}
+        ${ym('Inadimplência %',       fmtPct(yc.inadpf.pctInad))}
+        ${ym('Ticket Médio',          fmtBRL(yc.inadpf.ticketMedio),     true)}
       </div>`;
     } else if (hasI) {
       body = `<div class="year-card-body grid2">
@@ -403,6 +619,75 @@ function ym(label, value, accent) {
   return `<div class="year-metric"><div class="year-metric-label">${label}</div><div class="year-metric-value${accent?' accent':''}">${value}</div></div>`;
 }
 
+// ── Inadimplência semanal (barras) ─────────────────────────────
+function _renderWeekly(weekly) {
+  const grid = document.getElementById('weeklyGrid');
+  if (!weekly || !weekly.labels || !weekly.labels.length) {
+    grid.innerHTML = '<div class="placeholder-section" style="grid-column:1/-1">Sem dados de relatório semanal encontrados.</div>';
+    return;
+  }
+
+  grid.innerHTML = `
+    <div class="weekly-card">
+      <div class="weekly-card-title">2025</div>
+      <canvas class="weekly-chart" id="weeklyChart2025"></canvas>
+    </div>
+    <div class="weekly-card">
+      <div class="weekly-card-title">2026</div>
+      <canvas class="weekly-chart" id="weeklyChart2026"></canvas>
+    </div>`;
+
+  drawBarChart(document.getElementById('weeklyChart2025'), weekly.y2025);
+  drawBarChart(document.getElementById('weeklyChart2026'), weekly.y2026);
+}
+
+function drawBarChart(canvas, points, opts) {
+  const color       = (opts && opts.color) || 'rgba(239,99,112,.75)';
+  const formatValue = (opts && opts.formatValue) || fmtBRLCompact;
+
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 300, h = canvas.clientHeight || 220;
+  canvas.width  = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const padTop = 24, padBottom = 30, padSide = 6;
+  const plotH  = h - padTop - padBottom;
+  const max    = Math.max(...points.map(p => p.valor), 1);
+  const n      = points.length;
+  const gap    = 8;
+  const barW   = Math.max(6, (w - padSide * 2 - gap * (n - 1)) / n);
+
+  points.forEach((p, i) => {
+    const x = padSide + i * (barW + gap);
+    const barH = max > 0 ? Math.max(1, (p.valor / max) * plotH) : 0;
+    const y = padTop + (plotH - barH);
+    const r = Math.min(4, barW / 2);
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x, y + barH);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.lineTo(x + barW - r, y);
+    ctx.quadraticCurveTo(x + barW, y, x + barW, y + r);
+    ctx.lineTo(x + barW, y + barH);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#c0d4e9';
+    ctx.font = '600 10px "DM Sans", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(formatValue(p.valor), x + barW / 2, Math.max(10, y - 6));
+
+    ctx.fillStyle = '#5a8aba';
+    ctx.font = '500 10px "DM Sans", sans-serif';
+    ctx.fillText(p.label, x + barW / 2, h - padBottom + 16);
+  });
+}
+
 // ── Sparkline ─────────────────────────────────────────────────
 function drawSparkline(canvas, data, key) {
   const vals = data.map(d => d[key]);
@@ -414,9 +699,10 @@ function drawSparkline(canvas, data, key) {
     x: (i / (vals.length - 1)) * (w - 4) + 2,
     y: h - 4 - (v / max) * (h - 8),
   }));
+  // Azul neutro (não vermelho) — é só tendência, não indica bom/ruim
   const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, 'rgba(239,99,112,.35)');
-  grad.addColorStop(1, 'rgba(239,99,112,0)');
+  grad.addColorStop(0, 'rgba(90,138,186,.35)');
+  grad.addColorStop(1, 'rgba(90,138,186,0)');
   ctx.beginPath();
   ctx.moveTo(pts[0].x, h);
   pts.forEach(p => ctx.lineTo(p.x, p.y));
@@ -425,13 +711,28 @@ function drawSparkline(canvas, data, key) {
   ctx.fillStyle = grad; ctx.fill();
   ctx.beginPath();
   pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
-  ctx.strokeStyle = 'rgba(239,99,112,.8)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.strokeStyle = 'rgba(90,138,186,.9)'; ctx.lineWidth = 1.5; ctx.stroke();
 }
 
 // ── Formatters ────────────────────────────────────────────────
 function fmtInt(n)  { return (n === null || n === undefined) ? '—' : Math.round(n).toLocaleString('pt-BR'); }
 function fmtBRL(n)  { return (n === null || n === undefined) ? '—' : 'R$ ' + Number(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtPct(n)  { return (n === null || n === undefined) ? '—' : Number(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) + '%'; }
+function fmtBRLCompact(n) {
+  if (n === null || n === undefined) return '—';
+  const v = Number(n);
+  if (Math.abs(v) >= 1000) return 'R$ ' + (v/1000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}) + 'mil';
+  return 'R$ ' + v.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0});
+}
+function fmtClassAvg(n) { return (n === null || n === undefined) ? '—' : Number(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtDateBR(isoKey) {
+  if (!isoKey) return '—';
+  const p = isoKey.split('-');
+  return `${p[2]}/${p[1]}/${p[0]}`;
+}
+function _esc(s) {
+  return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 </script>
 </body>
 </html>

@@ -5,15 +5,56 @@
 
 const HUB_URL             = 'https://script.google.com/a/macros/brasas.com/s/AKfycbyF7BArYMYFtcQY7_4RTGGPw89yNohAjR7eGptItP-EsnWhNfiZR2ISRaHdAkwlLSlr/exec';
 const HUB_SHEET_ID        = '1eZPbzhzjhjHoPwMhAW5YvOZgYiAvlTYc07dRan6Lyoc';
-const MATRICULAS_SHEET_ID = '12QoeDXR86wISP-rk4pu6HybLsGnKhh3vvz7YBit37G0';
-const CANCELADOS_SHEET_ID = '1PxXw7wowahFSpi380JxM2A8kCN_fwBrRWc8wWctdrUc';
+const PREENCHIMENTO_SHEET_ID = '13hjshnh3EBcOAT3EmRDB5JO0FB51knfmT9PdCpoa4TU';
 const INADIMPLENCIA_SHEET_ID = '1ubH_01diSh8r2djLk0bNbS1adcPQYYEN_UJBF3EF5c4';
+const CLASS_AVERAGE_SHEET_ID = '1O5mYkfiFKpSd0aFxWVWjXJFxlbw6jYnDZX0SbiDda5M';
+const ESTATISTICA_SHEET_ID   = '1qiafd1roeusjkfXkOTPp2SdnXMVLdDHvYk4lDRwl4vE';
+const NPS_SHEET_ID           = '1JImJD3_KxbOYZ0g7b7ibCau9dMw7g__LrC4cXlqhnnU';
+
+// Bump isto a cada mudança na lógica de _computeKpiData/_computeInadData — invalida
+// automaticamente todo cache antigo (de qualquer unidade), sem precisar rodar clearCache().
+const CACHE_VERSION = 'v4';
 
 const NO_COBRAFIX = new Set(['BF','CH','DT','IP','IT','MR','NL','TQ','LJ','PC','PN']);
 const MEU_ACESSO  = 'boa semana'; // identificador na col H (ACESSOS) da aba SESSOES
 const ALL_UNITS   = ['BF','BG','CG','CH','CP','CX','DT','FG','IG','IP','IT','LJ','MR','NI','NL','NT','PC','PN','PO','RC','TJ','TQ','VP','VQ'];
 
 const _norm = s => String(s||'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+
+// ── Equivalência nome completo da unidade (col Unidade da aba Preenchimento) → sigla ──
+const UNIDADE_SIGLA = {
+  'bol':                       'BOL',
+  'botafogo':                  'BF',
+  'cachambi':                  'CH',
+  'campo grande':              'CG',
+  'caxias':                    'CX',
+  'copacabana':                'CP',
+  'downtown':                  'DT',
+  'freguesia':                 'FG',
+  'grajau':                    'GR',
+  'ilha do governador':        'IG',
+  'ipanema':                   'IP',
+  'itaipu':                    'IT',
+  'meier':                     'MR',
+  'niteroi':                   'NT',
+  'nova iguacu':               'NI',
+  'novo leblon':               'NL',
+  'parque olimpico':           'PO',
+  'pechincha':                 'PC',
+  'peninsula':                 'PN',
+  'polo brasas - bangu':       'BG',
+  'polo brasas - laranjeiras': 'LJ',
+  'recreio':                   'RC',
+  'taquara':                   'TQ',
+  'tijuca':                    'TJ',
+  'vila da penha':             'VP',
+  'vila olimpia':              'VO',
+  'vila valqueire':            'VQ',
+};
+const _sigla = nome => UNIDADE_SIGLA[_norm(nome)] || null;
+
+// Motivos de cancelamento que NÃO contam como cancelado
+const CANCEL_EXCLUDE_MOTIVOS = new Set(['termino book 10', 'acerto de sistema']);
 
 // ── Entry point ───────────────────────────────────────────────
 function doGet(e) {
@@ -31,6 +72,7 @@ function doGet(e) {
   tmpl.unidades     = JSON.stringify(auth.access.unidades);
   // Para admin (unidades=null), passa a lista completa para o seletor
   tmpl.allUnits     = JSON.stringify(auth.access.unidades === null ? ALL_UNITS : auth.access.unidades);
+  tmpl.hubUrl       = HUB_URL;
 
   return tmpl.evaluate()
     .setTitle('Boa Semana – BRASAS')
@@ -50,7 +92,7 @@ function getKpiOnly(token, unitFilter) {
     if (units === false) return JSON.stringify({ ok: false, error: 'Acesso não autorizado.' });
 
     const cache    = CacheService.getScriptCache();
-    const cacheKey = 'kpi_' + (units === null ? 'ALL' : units.slice().sort().join(','));
+    const cacheKey = 'kpi_' + CACHE_VERSION + '_' + (units === null ? 'ALL' : units.slice().sort().join(','));
     const cached   = cache.get(cacheKey);
     if (cached) return cached;
 
@@ -70,11 +112,55 @@ function getInadOnly(token, unitFilter) {
     if (units === false) return JSON.stringify({ ok: false, error: 'Acesso não autorizado.' });
 
     const cache    = CacheService.getScriptCache();
-    const cacheKey = 'inad_' + (units === null ? 'ALL' : units.slice().sort().join(','));
+    const cacheKey = 'inad_' + CACHE_VERSION + '_' + (units === null ? 'ALL' : units.slice().sort().join(','));
     const cached   = cache.get(cacheKey);
     if (cached) return cached;
 
     const result = JSON.stringify({ ok: true, inad: _computeInadData(units) });
+    try { cache.put(cacheKey, result, 3600); } catch(e) {}
+    return result;
+  } catch(err) {
+    return JSON.stringify({ ok: false, error: err.message });
+  }
+}
+
+function getClassAverageOnly(token, unitFilter) {
+  try {
+    const auth = _authAndAccess(token);
+    if (!auth) return JSON.stringify({ ok: false, error: 'Sessão inválida ou sem acesso.' });
+    const units = _resolveUnits(auth.access, unitFilter);
+    if (units === false) return JSON.stringify({ ok: false, error: 'Acesso não autorizado.' });
+
+    const cache    = CacheService.getScriptCache();
+    const cacheKey = 'classavg_' + CACHE_VERSION + '_' + (units === null ? 'ALL' : units.slice().sort().join(','));
+    const cached   = cache.get(cacheKey);
+    if (cached) return cached;
+
+    const weekly = _computeClassAverageWeekly(units);
+    const cards  = _computeEstatisticaCards(units);
+    cards.atual  = weekly.points.length ? weekly.points[weekly.points.length - 1].valor : null;
+
+    const result = JSON.stringify({ ok: true, classAverage: { points: weekly.points, cards } });
+    try { cache.put(cacheKey, result, 3600); } catch(e) {}
+    return result;
+  } catch(err) {
+    return JSON.stringify({ ok: false, error: err.message });
+  }
+}
+
+function getNpsOnly(token, unitFilter) {
+  try {
+    const auth = _authAndAccess(token);
+    if (!auth) return JSON.stringify({ ok: false, error: 'Sessão inválida ou sem acesso.' });
+    const units = _resolveUnits(auth.access, unitFilter);
+    if (units === false) return JSON.stringify({ ok: false, error: 'Acesso não autorizado.' });
+
+    const cache    = CacheService.getScriptCache();
+    const cacheKey = 'nps_' + CACHE_VERSION + '_' + (units === null ? 'ALL' : units.slice().sort().join(','));
+    const cached   = cache.get(cacheKey);
+    if (cached) return cached;
+
+    const result = JSON.stringify({ ok: true, nps: _computeNpsData(units) });
     try { cache.put(cacheKey, result, 3600); } catch(e) {}
     return result;
   } catch(err) {
@@ -164,6 +250,8 @@ function _resolveUnits(access, unitFilter) {
 }
 
 // ── KPI: Matrículas + Cancelados + Saldo ─────────────────────
+// Comparação sempre "mesmo intervalo de dias" no ano anterior (ex.: dia 1 a 3
+// de julho/26 vs dia 1 a 3 de julho/25), não o mês/trimestre/ano fechado.
 function _computeKpiData(units) {
   const now      = new Date();
   const curYear  = now.getFullYear();
@@ -171,74 +259,48 @@ function _computeKpiData(units) {
   const curQ     = Math.ceil(curMonth / 3);
   const prevYear = curYear - 1;
   const qStart   = (curQ - 1) * 3 + 1;
-  const qEnd     = qStart + 2;
+  const today    = new Date(curYear, now.getMonth(), now.getDate());
 
-  const matData = SpreadsheetApp.openById(MATRICULAS_SHEET_ID)
-    .getSheetByName('db_all_since2020').getDataRange().getValues();
-  const canData = SpreadsheetApp.openById(CANCELADOS_SHEET_ID)
-    .getSheetByName('db_Cancelados_All').getDataRange().getValues();
+  const { matDay, canDay } = _loadMatCanIndexes(units, curYear, prevYear);
 
-  const matH = matData[0].map(_norm);
-  const canH = canData[0].map(_norm);
-
-  const mI = {
-    unidade: matH.indexOf('unidade'),
-    mes:     matH.indexOf('mes'),
-    ano:     matH.indexOf('ano'),
-    mat:     matH.findIndex(h => h === 'matriculas'),
-  };
-  const cI = {
-    unidade: canH.findIndex(h => h === 'unidade'),
-    mes:     canH.findIndex(h => h === 'mes'),
-    ano:     canH.findIndex(h => h === 'ano'),
-    can:     canH.findIndex(h => h === 'cancelados'),
-  };
-
-  // Pré-indexar apenas os anos que interessam (atual e anterior)
-  const unitSet = units ? new Set(units) : null; // null = sem filtro (todas)
-  const matIdx = {}, canIdx = {};
-  for (let i = 1; i < matData.length; i++) {
-    const r = matData[i];
-    const u = String(r[mI.unidade]||'').trim().toUpperCase();
-    if (unitSet && !unitSet.has(u)) continue;
-    const y = +r[mI.ano], m = +r[mI.mes];
-    if (y !== curYear && y !== prevYear) continue;
-    const key = `${y}_${m}`;
-    matIdx[key] = (matIdx[key] || 0) + (parseFloat(r[mI.mat]) || 0);
+  function sumRange(idx, start, end) {
+    let t = 0;
+    const d = new Date(start);
+    while (d <= end) {
+      t += idx[`${d.getFullYear()}_${d.getMonth() + 1}_${d.getDate()}`] || 0;
+      d.setDate(d.getDate() + 1);
+    }
+    return t;
   }
-  for (let i = 1; i < canData.length; i++) {
-    const r = canData[i];
-    const u = String(r[cI.unidade]||'').trim().toUpperCase();
-    if (unitSet && !unitSet.has(u)) continue;
-    const y = +r[cI.ano], m = +r[cI.mes];
-    if (y !== curYear && y !== prevYear) continue;
-    const key = `${y}_${m}`;
-    canIdx[key] = (canIdx[key] || 0) + (parseFloat(r[cI.can]) || 0);
-  }
-
-  function sumMat(year, m1, m2) { let t = 0; for (let m = m1; m <= m2; m++) t += matIdx[`${year}_${m}`] || 0; return t; }
-  function sumCan(year, m1, m2) { let t = 0; for (let m = m1; m <= m2; m++) t += canIdx[`${year}_${m}`] || 0; return t; }
+  function shiftYear(d, delta) { return new Date(d.getFullYear() + delta, d.getMonth(), d.getDate()); }
   function pct(cur, prev) { return prev ? +((cur - prev) / prev * 100).toFixed(1) : null; }
 
-  const mMes = sumMat(curYear, curMonth, curMonth);
-  const mTri = sumMat(curYear, qStart, qEnd);
-  const mAno = sumMat(curYear, 1, curMonth);
-  const cMes = sumCan(curYear, curMonth, curMonth);
-  const cTri = sumCan(curYear, qStart, qEnd);
-  const cAno = sumCan(curYear, 1, curMonth);
+  const mesStart = new Date(curYear, curMonth - 1, 1);
+  const triStart = new Date(curYear, qStart - 1, 1);
+  const anoStart = new Date(curYear, 0, 1);
+  const todayP   = shiftYear(today, -1);
 
-  const mMesP = sumMat(prevYear, curMonth, curMonth);
-  const mTriP = sumMat(prevYear, qStart, qEnd);
-  const mAnoP = sumMat(prevYear, 1, curMonth);
-  const cMesP = sumCan(prevYear, curMonth, curMonth);
-  const cTriP = sumCan(prevYear, qStart, qEnd);
-  const cAnoP = sumCan(prevYear, 1, curMonth);
+  const mMes = sumRange(matDay, mesStart, today);
+  const mTri = sumRange(matDay, triStart, today);
+  const mAno = sumRange(matDay, anoStart, today);
+  const cMes = sumRange(canDay, mesStart, today);
+  const cTri = sumRange(canDay, triStart, today);
+  const cAno = sumRange(canDay, anoStart, today);
+
+  const mMesP = sumRange(matDay, shiftYear(mesStart, -1), todayP);
+  const mTriP = sumRange(matDay, shiftYear(triStart, -1), todayP);
+  const mAnoP = sumRange(matDay, shiftYear(anoStart, -1), todayP);
+  const cMesP = sumRange(canDay, shiftYear(mesStart, -1), todayP);
+  const cTriP = sumRange(canDay, shiftYear(triStart, -1), todayP);
+  const cAnoP = sumRange(canDay, shiftYear(anoStart, -1), todayP);
 
   const sparkline = [];
   for (let i = 11; i >= 0; i--) {
     const d = new Date(curYear, curMonth - 1 - i, 1);
     const y = d.getFullYear(), m = d.getMonth() + 1;
-    sparkline.push({ y, m, mat: sumMat(y, m, m), can: sumCan(y, m, m) });
+    const monthStart = new Date(y, m - 1, 1);
+    const monthEnd   = new Date(y, m, 0);
+    sparkline.push({ y, m, mat: sumRange(matDay, monthStart, monthEnd), can: sumRange(canDay, monthStart, monthEnd) });
   }
 
   return {
@@ -260,6 +322,60 @@ function _computeKpiData(units) {
     sparkline,
     periodo: { ano: curYear, mes: curMonth, trimestre: curQ },
   };
+}
+
+// ── Matrículas + Cancelados: lê direto da aba "Preenchimento" (base bruta) ──
+// mat: coluna "Tipo de Registro" (E) = Matrícula | Matrícula Turma Fechada; data = "Data da matrícula" (H)
+// can: coluna "Tipo de Registro Saída" (T) = Cancelado, exceto motivo (F) = Término Book 10 | Acerto de sistema; data = "Data de Cancelamento" (U)
+function _loadMatCanIndexes(units, curYear, prevYear) {
+  const data = SpreadsheetApp.openById(PREENCHIMENTO_SHEET_ID)
+    .getSheetByName('Preenchimento').getDataRange().getValues();
+
+  const header = data[0].map(_norm);
+  const cI = {
+    unidade:      header.indexOf('unidade'),
+    tipoReg:      header.indexOf('tipo de registro'),
+    motivoCancel: header.indexOf('motivo do cancelamento'),
+    dataMat:      header.indexOf('data da matricula'),
+    tipoRegSaida: header.indexOf('tipo de registro saida'),
+    dataCancel:   header.indexOf('data de cancelamento'),
+  };
+
+  const unitSet = units ? new Set(units) : null; // null = sem filtro (todas)
+  // Indexado por dia exato (não por mês) para permitir comparação "mesmo intervalo de dias" ano a ano
+  const matDay = {}, canDay = {};
+
+  for (let i = 1; i < data.length; i++) {
+    const r = data[i];
+    const sigla = _sigla(r[cI.unidade]);
+    if (!sigla || (unitSet && !unitSet.has(sigla))) continue;
+
+    const tipoReg = _norm(r[cI.tipoReg]);
+    if (tipoReg === 'matricula' || tipoReg === 'matricula turma fechada') {
+      const d = r[cI.dataMat] instanceof Date ? r[cI.dataMat] : new Date(r[cI.dataMat]);
+      if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        if (y === curYear || y === prevYear) {
+          const key = `${y}_${d.getMonth() + 1}_${d.getDate()}`;
+          matDay[key] = (matDay[key] || 0) + 1;
+        }
+      }
+    }
+
+    const tipoSaida = _norm(r[cI.tipoRegSaida]);
+    if (tipoSaida === 'cancelado' && !CANCEL_EXCLUDE_MOTIVOS.has(_norm(r[cI.motivoCancel]))) {
+      const d = r[cI.dataCancel] instanceof Date ? r[cI.dataCancel] : new Date(r[cI.dataCancel]);
+      if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        if (y === curYear || y === prevYear) {
+          const key = `${y}_${d.getMonth() + 1}_${d.getDate()}`;
+          canDay[key] = (canDay[key] || 0) + 1;
+        }
+      }
+    }
+  }
+
+  return { matDay, canDay };
 }
 
 // ── Inadimplência ─────────────────────────────────────────────
@@ -372,6 +488,9 @@ function _computeInadData(units) {
   const recentYears = new Set([...Object.keys(fCobra).map(Number), ...Object.keys(fInad).map(Number)]);
   for (const yr of [...recentYears].sort()) yearCards[yr] = _buildYearCard(fCobra[yr]||null, fInad[yr]||null);
 
+  // 6. Séries semanais (2025 / 2026) — últimas 10 datas de relatório
+  const weekly = _computeInadWeekly(ss, unitSet);
+
   return {
     total: {
       valorPrevisto: totalValor,
@@ -379,7 +498,402 @@ function _computeInadData(units) {
       ticketMedio:   totalTitulos > 0 ? totalValor / totalTitulos : 0,
     },
     yearCards,
+    weekly,
   };
+}
+
+// ── Inadimplência semanal: soma db_inadimplência_pf + db_baixados por data de relatório ──
+// pf: col F = ano, col I = valor, col U = data do relatório, col V = unidade
+// baixados: ano tirado da col E (data da inadimplência), col H = valor, col J = data do relatório, col K = unidade
+// Mostra só as 10 datas de relatório mais recentes (mesmo eixo X pras duas séries de ano)
+function _computeInadWeekly(ss, unitSet) {
+  const YEARS = [2025, 2026];
+  const sums = {}; YEARS.forEach(y => sums[y] = {});
+  const allDates = new Set();
+
+  function addRow(ano, dataRelRaw, valor) {
+    if (YEARS.indexOf(ano) === -1) return;
+    const key = _dateKey(dataRelRaw);
+    if (!key) return;
+    sums[ano][key] = (sums[ano][key] || 0) + valor;
+    allDates.add(key);
+  }
+
+  const pfData = ss.getSheetByName('db_inadimplência_pf').getDataRange().getValues();
+  for (let i = 1; i < pfData.length; i++) {
+    const r = pfData[i];
+    const unit = String(r[21]||'').trim().toUpperCase(); // V
+    if (unitSet && !unitSet.has(unit)) continue;
+    addRow(parseInt(r[5]), r[20], parseFloat(r[8]) || 0); // F, U, I
+  }
+
+  const baixData = ss.getSheetByName('db_baixados').getDataRange().getValues();
+  for (let i = 1; i < baixData.length; i++) {
+    const r = baixData[i];
+    const unit = String(r[10]||'').trim().toUpperCase(); // K
+    if (unitSet && !unitSet.has(unit)) continue;
+    const dIndiv = r[4] instanceof Date ? r[4] : new Date(r[4]); // E
+    if (isNaN(dIndiv.getTime())) continue;
+    addRow(dIndiv.getFullYear(), r[9], parseFloat(r[7]) || 0); // J, H
+  }
+
+  const last10 = [...allDates].sort().slice(-10);
+  const series = ano => last10.map(key => ({ date: key, label: _dateLabel(key), valor: sums[ano][key] || 0 }));
+
+  return { labels: last10.map(_dateLabel), y2025: series(2025), y2026: series(2026) };
+}
+
+function _dateKey(raw) {
+  const d = raw instanceof Date ? raw : new Date(raw);
+  if (isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// ── Class Average semanal (últimas 10 datas de relatório) ──
+// Aba NEW_Class_Average: Unidade, Turmas, Nº Alunos, Class Average, Data
+// Ao combinar unidades (ex.: "Todas as unidades"), usa média ponderada (soma Alunos / soma Turmas)
+// por data de relatório, em vez de somar os valores de Class Average — senão distorce a métrica.
+function _computeClassAverageWeekly(units) {
+  const unitSet = units ? new Set(units) : null;
+  const data = SpreadsheetApp.openById(CLASS_AVERAGE_SHEET_ID)
+    .getSheetByName('NEW_Class_Average').getDataRange().getValues();
+
+  const header = data[0].map(_norm);
+  const cI = {
+    unidade: header.indexOf('unidade'),
+    turmas:  header.indexOf('turmas'),
+    alunos:  header.findIndex(h => h.includes('aluno')),
+    data:    header.indexOf('data'),
+  };
+
+  const sums = {}; // dateKey -> { turmas, alunos }
+  for (let i = 1; i < data.length; i++) {
+    const r = data[i];
+    const sigla = _sigla(r[cI.unidade]);
+    if (!sigla || (unitSet && !unitSet.has(sigla))) continue;
+
+    const key = _dateKey(r[cI.data]);
+    if (!key) continue;
+
+    if (!sums[key]) sums[key] = { turmas: 0, alunos: 0 };
+    sums[key].turmas += parseFloat(r[cI.turmas]) || 0;
+    sums[key].alunos += parseFloat(r[cI.alunos]) || 0;
+  }
+
+  const last10 = Object.keys(sums).sort().slice(-10);
+  const points = last10.map(key => {
+    const s = sums[key];
+    return { date: key, label: _dateLabel(key), valor: s.turmas > 0 ? s.alunos / s.turmas : 0 };
+  });
+
+  return { points };
+}
+
+// ── Class Average Regular / Parceiro (aba "Estatística" — 1 linha por unidade por mês) ──
+// Usa só a linha mais recente (maior Carimbo de data/hora) de CADA unidade, igual ao
+// padrão já usado em _computeInadData pra "Inadimplência Total" (latestDate por unidade).
+// Regular  = soma(Nº de Alunos Regulares) / soma(Nº de Turmas Regulares)
+// Parceiro = soma(alunos em turmas fechadas/escolas-empresas) / soma(turmas fechadas/escolas-empresas)
+function _computeEstatisticaCards(units) {
+  const unitSet = units ? new Set(units) : null;
+  const data = SpreadsheetApp.openById(ESTATISTICA_SHEET_ID)
+    .getSheetByName('Estatística').getDataRange().getValues();
+
+  const latest = {}; // sigla -> { row, ts }
+  for (let i = 1; i < data.length; i++) {
+    const r = data[i];
+    const sigla = String(r[3]||'').trim().toUpperCase(); // Unidade — já vem como sigla nessa aba
+    if (!sigla || (unitSet && !unitSet.has(sigla))) continue;
+    const ts = r[0] instanceof Date ? r[0] : new Date(r[0]); // Carimbo de data/hora
+    if (isNaN(ts.getTime())) continue;
+    if (!latest[sigla] || ts > latest[sigla].ts) latest[sigla] = { row: r, ts };
+  }
+
+  let alunosRegulares = 0, turmasRegulares = 0;
+  let alunosParceiro = 0, turmasParceiro = 0;
+
+  Object.values(latest).forEach(({ row: r }) => {
+    alunosRegulares += parseFloat(r[39]) || 0; // Nº de Alunos Regulares
+    turmasRegulares += parseFloat(r[18]) || 0; // Nº de Turmas Regulares
+
+    alunosParceiro += (parseFloat(r[9])  || 0)  // Nº de Alunos em Turmas Fechadas na Unidade
+                     + (parseFloat(r[10]) || 0)  // Nº de Alunos em Turmas de Escolas/Empresas
+                     + (parseFloat(r[11]) || 0)  // ...turmas fechadas custeado pelo aluno
+                     + (parseFloat(r[12]) || 0); // ...turmas abertas custeado pelo aluno
+
+    turmasParceiro += (parseFloat(r[19]) || 0)  // Nº de Turmas Fechadas na Unidade
+                     + (parseFloat(r[20]) || 0)  // N° de Turmas de Escolas/Empresas custeada pela empresa
+                     + (parseFloat(r[21]) || 0)  // ...turmas fechadas custeado pelo aluno
+                     + (parseFloat(r[22]) || 0); // ...turmas abertas custeado pelo aluno
+  });
+
+  return {
+    regular:  turmasRegulares > 0 ? alunosRegulares / turmasRegulares : 0,
+    parceiro: turmasParceiro  > 0 ? alunosParceiro  / turmasParceiro  : 0,
+  };
+}
+
+// ── NPS ─────────────────────────────────────────────────────
+// Aba "C - A e K" (pesquisa de cancelamento, Adults + Kids):
+//   0 Carimbo · 2 Nome · 5 Livro em que parou (Book) · 7 Motivo do Cancelamento
+//   9 Nota (Qual é a chance de indicar) · 10 Críticas/Sugestões/Elogios
+//   12 Data Resposta · 13 Pesquisa (Adults/Kids) · 14 Unidade Ajustada (sigla)
+// Aba "N - All" (pesquisa de mudança de nível):
+//   9 Nota · 12 Data Resposta · 14 UNIDADE AJUSTADA (sigla)
+// NPS = (%promotores [nota 9-10] − %detratores [nota 0-6]) × 100
+function _computeNpsData(units) {
+  const unitSet = units ? new Set(units) : null;
+  const ss = SpreadsheetApp.openById(NPS_SHEET_ID);
+
+  const cakData  = ss.getSheetByName('C - A e K').getDataRange().getValues();
+  const nAllData = ss.getSheetByName('N - All').getDataRange().getValues();
+
+  const cakRows = cakData.slice(1).filter(r => {
+    const unit = String(r[14]||'').trim().toUpperCase();
+    return unit && (!unitSet || unitSet.has(unit));
+  });
+  const adultsRows = cakRows.filter(r => _norm(r[13]).includes('adult'));
+  const kidsRows   = cakRows.filter(r => _norm(r[13]).includes('kids'));
+
+  const nAllRows = nAllData.slice(1).filter(r => {
+    const unit = String(r[14]||'').trim().toUpperCase();
+    return unit && (!unitSet || unitSet.has(unit));
+  });
+
+  const adults = _npsScore(adultsRows, 9);
+  const kids   = _npsScore(kidsRows, 9);
+  const nivel  = _npsScore(nAllRows, 9);
+
+  // Data da última resposta — respeita o filtro de unidade, combina as duas pesquisas
+  let lastResponse = null;
+  [...cakRows, ...nAllRows].forEach(r => {
+    const d = r[12] instanceof Date ? r[12] : new Date(r[12]);
+    if (!isNaN(d.getTime()) && (!lastResponse || d > lastResponse)) lastResponse = d;
+  });
+
+  // Tabela de respostas recentes — SEM filtro de unidade (todos veem de todos),
+  // só a pesquisa de cancelamento (C - A e K), últimos 14 dias
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 14);
+  const recent = cakData.slice(1)
+    .map(r => ({ r, d: r[12] instanceof Date ? r[12] : new Date(r[12]) }))
+    .filter(({ d }) => !isNaN(d.getTime()) && d >= cutoff)
+    .sort((a, b) => b.d - a.d)
+    .map(({ r, d }) => ({
+      unidade:  String(r[14]||'').trim().toUpperCase(),
+      data:     _dateKey(d),
+      nome:     String(r[2]||''),
+      book:     String(r[5]||''),
+      nota:     r[9] === '' || r[9] === null || r[9] === undefined ? null : parseFloat(r[9]),
+      motivo:   String(r[7]||''),
+      criticas: String(r[10]||''),
+    }));
+
+  return {
+    adults, kids, mudancaNivel: nivel,
+    lastResponse: lastResponse ? _dateKey(lastResponse) : null,
+    recent,
+  };
+}
+
+function _npsScore(rows, notaIdx) {
+  let promoters = 0, detractors = 0, total = 0;
+  rows.forEach(r => {
+    const nota = parseFloat(r[notaIdx]);
+    if (isNaN(nota)) return;
+    total++;
+    if (nota >= 9) promoters++;
+    else if (nota <= 6) detractors++;
+  });
+  return {
+    nps: total > 0 ? +(((promoters - detractors) / total) * 100).toFixed(1) : null,
+    total, promoters, detractors,
+  };
+}
+
+// Diagnóstico do NPS — roda e olha o Log de Execução
+function debugNps() {
+  const result = {};
+  try {
+    const ss = SpreadsheetApp.openById(NPS_SHEET_ID);
+    ['C - A e K', 'N - All'].forEach(name => {
+      const sheet = ss.getSheetByName(name);
+      const key = name.replace(/[^a-zA-Z]/g, '_');
+      if (!sheet) { result[key + '_aba'] = 'ERRO: aba não encontrada'; return; }
+      const data = sheet.getDataRange().getValues();
+      result[key + '_aba']      = 'OK';
+      result[key + '_linhas']   = data.length;
+      result[key + '_header']   = data[0];
+      result[key + '_amostras'] = data.slice(1, 6).map(r => ({
+        unidade: r[14],
+        pesquisa: name === 'C - A e K' ? r[13] : '(n/a)',
+        nota: r[9],
+        dataResposta: r[12], dataRespostaType: typeof r[12],
+      }));
+    });
+  } catch(e) { result.erro = e.message; }
+
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+function _dateLabel(key) {
+  const p = key.split('-');
+  return `${p[2]}/${p[1]}`;
+}
+
+// Diagnóstico do gráfico de Class Average — roda e olha o Log de Execução
+function debugClassAverage() {
+  const result = {};
+  try {
+    const ss    = SpreadsheetApp.openById(CLASS_AVERAGE_SHEET_ID);
+    const sheet = ss.getSheetByName('NEW_Class_Average');
+    result.aba = sheet ? 'OK' : 'ERRO: aba não encontrada';
+    if (sheet) {
+      const data = sheet.getDataRange().getValues();
+      result.linhas = data.length;
+      result.header = data[0];
+
+      const siglaMissing = {};
+      let datasValidas = 0, datasInvalidas = 0;
+      const samples = [];
+      const header = data[0].map(_norm);
+      const cI = {
+        unidade: header.indexOf('unidade'),
+        turmas:  header.indexOf('turmas'),
+        alunos:  header.findIndex(h => h.includes('aluno')),
+        data:    header.indexOf('data'),
+      };
+      result.indices = cI;
+
+      for (let i = 1; i < data.length; i++) {
+        const r = data[i];
+        const sigla = _sigla(r[cI.unidade]);
+        if (!sigla) siglaMissing[String(r[cI.unidade])] = (siglaMissing[String(r[cI.unidade])] || 0) + 1;
+        const key = _dateKey(r[cI.data]);
+        key ? datasValidas++ : datasInvalidas++;
+        if (samples.length < 5) samples.push({
+          unidadeRaw: r[cI.unidade], sigla,
+          turmas: r[cI.turmas], alunos: r[cI.alunos],
+          dataRaw: r[cI.data], dataType: typeof r[cI.data],
+        });
+      }
+      result.amostras          = samples;
+      result.siglaMissingTop   = Object.entries(siglaMissing).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      result.datasValidas      = datasValidas;
+      result.datasInvalidas    = datasInvalidas;
+    }
+  } catch(e) { result.erro = e.message; }
+
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+// Diagnóstico dos cards Class Average Regular/Parceiro — roda e olha o Log de Execução
+function debugEstatistica() {
+  const result = {};
+  try {
+    const ss    = SpreadsheetApp.openById(ESTATISTICA_SHEET_ID);
+    const sheet = ss.getSheetByName('Estatística');
+    result.aba = sheet ? 'OK' : 'ERRO: aba não encontrada';
+    if (sheet) {
+      const data = sheet.getDataRange().getValues();
+      result.linhas = data.length;
+      result.header = data[0];
+
+      const siglaMissing = {};
+      let carimbosValidos = 0, carimbosInvalidos = 0;
+      const samples = [];
+      const latest = {};
+      for (let i = 1; i < data.length; i++) {
+        const r = data[i];
+        const sigla = String(r[3]||'').trim().toUpperCase();
+        if (!sigla) siglaMissing[String(r[3])] = (siglaMissing[String(r[3])] || 0) + 1;
+        const ts = r[0] instanceof Date ? r[0] : new Date(r[0]);
+        if (isNaN(ts.getTime())) { carimbosInvalidos++; } else {
+          carimbosValidos++;
+          if (sigla && (!latest[sigla] || ts > latest[sigla].ts)) latest[sigla] = { ts, row: r };
+        }
+        if (samples.length < 5) samples.push({
+          unidadeRaw: r[3], sigla, carimboRaw: r[0], carimboType: typeof r[0],
+          turmasRegulares: r[18], alunosRegulares: r[39],
+        });
+      }
+      result.amostras        = samples;
+      result.siglaMissingTop = Object.entries(siglaMissing).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      result.carimbosValidos   = carimbosValidos;
+      result.carimbosInvalidos = carimbosInvalidos;
+      result.linhaMaisRecentePorUnidade = Object.fromEntries(
+        Object.entries(latest).map(([sigla, v]) => [sigla, {
+          carimbo: v.ts, turmasRegulares: v.row[18], alunosRegulares: v.row[39],
+        }])
+      );
+    }
+  } catch(e) { result.erro = e.message; }
+
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+// Diagnóstico do gráfico semanal — roda e olha o Log de Execução
+function debugInadWeekly() {
+  const ss = SpreadsheetApp.openById(INADIMPLENCIA_SHEET_ID);
+  const result = {};
+
+  try {
+    const pfSheet = ss.getSheetByName('db_inadimplência_pf');
+    result.pf_aba = pfSheet ? 'OK' : 'ERRO: aba não encontrada';
+    if (pfSheet) {
+      const pfData = pfSheet.getDataRange().getValues();
+      result.pf_linhas  = pfData.length;
+      result.pf_header  = pfData[0];
+      const anoCounts = {};
+      let validDates = 0, invalidDates = 0;
+      const samples = [];
+      for (let i = 1; i < pfData.length; i++) {
+        const r = pfData[i];
+        const ano = parseInt(r[5]);
+        anoCounts[ano] = (anoCounts[ano] || 0) + 1;
+        const d = r[20] instanceof Date ? r[20] : new Date(r[20]);
+        isNaN(d.getTime()) ? invalidDates++ : validDates++;
+        if (samples.length < 5) samples.push({ unidade: r[21], ano: r[5], valor: r[8], dataRelRaw: r[20], dataRelType: typeof r[20] });
+      }
+      result.pf_amostras          = samples;
+      result.pf_anoCounts         = anoCounts;
+      result.pf_datasRelValidas   = validDates;
+      result.pf_datasRelInvalidas = invalidDates;
+    }
+  } catch(e) { result.pf_erro = e.message; }
+
+  try {
+    const baixSheet = ss.getSheetByName('db_baixados');
+    result.baixados_aba = baixSheet ? 'OK' : 'ERRO: aba não encontrada';
+    if (baixSheet) {
+      const baixData = baixSheet.getDataRange().getValues();
+      result.baixados_linhas = baixData.length;
+      result.baixados_header = baixData[0];
+      const anoCounts = {};
+      let validIndiv = 0, invalidIndiv = 0, validRel = 0, invalidRel = 0;
+      const samples = [];
+      for (let i = 1; i < baixData.length; i++) {
+        const r = baixData[i];
+        const dIndiv = r[4] instanceof Date ? r[4] : new Date(r[4]);
+        if (isNaN(dIndiv.getTime())) { invalidIndiv++; } else { validIndiv++; const ano = dIndiv.getFullYear(); anoCounts[ano] = (anoCounts[ano] || 0) + 1; }
+        const dRel = r[9] instanceof Date ? r[9] : new Date(r[9]);
+        isNaN(dRel.getTime()) ? invalidRel++ : validRel++;
+        if (samples.length < 5) samples.push({ unidade: r[10], dataIndivRaw: r[4], dataIndivType: typeof r[4], valor: r[7], dataRelRaw: r[9], dataRelType: typeof r[9] });
+      }
+      result.baixados_amostras           = samples;
+      result.baixados_anoCounts          = anoCounts;
+      result.baixados_datasIndivValidas  = validIndiv;
+      result.baixados_datasIndivInvalidas = invalidIndiv;
+      result.baixados_datasRelValidas    = validRel;
+      result.baixados_datasRelInvalidas  = invalidRel;
+    }
+  } catch(e) { result.baixados_erro = e.message; }
+
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
 }
 
 function _buildYearCard(cb, ipRaw) {
@@ -396,25 +910,98 @@ function _buildYearCard(cb, ipRaw) {
 
 // ── Debug temporário ──────────────────────────────────────────
 function debugKpi() {
-  const matData = SpreadsheetApp.openById(MATRICULAS_SHEET_ID)
-    .getSheetByName('db_all_since2020').getDataRange().getValues();
-  const matH = matData[0].map(_norm);
-  const mI = { unidade: matH.indexOf('unidade'), mes: matH.indexOf('mes'), ano: matH.indexOf('ano'), mat: matH.findIndex(h => h === 'matriculas') };
+  const curYear  = new Date().getFullYear();
+  const prevYear = curYear - 1;
+  const { matDay, canDay } = _loadMatCanIndexes(null, curYear, prevYear);
+  const result = { curYear, prevYear, matDay, canDay };
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+// Diagnóstico detalhado da leitura da aba Preenchimento — roda e olha o Log de Execução
+function debugPreenchimento() {
+  const data = SpreadsheetApp.openById(PREENCHIMENTO_SHEET_ID)
+    .getSheetByName('Preenchimento').getDataRange().getValues();
+
+  const headerRaw = data[0];
+  const header    = headerRaw.map(_norm);
+  const cI = {
+    unidade:      header.indexOf('unidade'),
+    tipoReg:      header.indexOf('tipo de registro'),
+    motivoCancel: header.indexOf('motivo do cancelamento'),
+    dataMat:      header.indexOf('data da matricula'),
+    tipoRegSaida: header.indexOf('tipo de registro saida'),
+    dataCancel:   header.indexOf('data de cancelamento'),
+  };
+
   const curYear = new Date().getFullYear();
+  const prevYear = curYear - 1;
+
   const samples = [];
-  for (let i = 1; i < matData.length && samples.length < 5; i++) {
-    if (+matData[i][mI.ano] === curYear) samples.push({ u: matData[i][mI.unidade], m: matData[i][mI.mes], a: matData[i][mI.ano], v: matData[i][mI.mat] });
+  const siglaMissing = {};
+  const tipoRegValues = {}, tipoRegSaidaValues = {};
+  let matMatches = 0, canMatches = 0, dateInvalidMat = 0, dateInvalidCan = 0;
+  let matNoSigla = 0, canNoSigla = 0;
+
+  for (let i = 1; i < data.length; i++) {
+    const r = data[i];
+    const unidadeRaw = r[cI.unidade];
+    const sigla = _sigla(unidadeRaw);
+    if (!sigla) siglaMissing[String(unidadeRaw)] = (siglaMissing[String(unidadeRaw)] || 0) + 1;
+
+    const tipoRegRaw = r[cI.tipoReg];
+    tipoRegValues[String(tipoRegRaw)] = (tipoRegValues[String(tipoRegRaw)] || 0) + 1;
+    const tipoRegSaidaRaw = r[cI.tipoRegSaida];
+    tipoRegSaidaValues[String(tipoRegSaidaRaw)] = (tipoRegSaidaValues[String(tipoRegSaidaRaw)] || 0) + 1;
+
+    if (samples.length < 10) {
+      samples.push({
+        unidadeRaw, sigla,
+        tipoReg: tipoRegRaw, tipoRegNorm: _norm(tipoRegRaw),
+        dataMatRaw: r[cI.dataMat], dataMatType: typeof r[cI.dataMat],
+        tipoRegSaida: tipoRegSaidaRaw,
+        motivoCancel: r[cI.motivoCancel],
+        dataCancelRaw: r[cI.dataCancel], dataCancelType: typeof r[cI.dataCancel],
+      });
+    }
+
+    const tipoReg = _norm(tipoRegRaw);
+    if (tipoReg === 'matricula' || tipoReg === 'matricula turma fechada') {
+      matMatches++;
+      if (!sigla) matNoSigla++;
+      const d = r[cI.dataMat] instanceof Date ? r[cI.dataMat] : new Date(r[cI.dataMat]);
+      if (isNaN(d.getTime())) dateInvalidMat++;
+    }
+    const tipoSaida = _norm(tipoRegSaidaRaw);
+    if (tipoSaida === 'cancelado') {
+      canMatches++;
+      if (!sigla) canNoSigla++;
+      const d = r[cI.dataCancel] instanceof Date ? r[cI.dataCancel] : new Date(r[cI.dataCancel]);
+      if (isNaN(d.getTime())) dateInvalidCan++;
+    }
   }
-  const result = { indices: mI, curYear, amostras_ano_atual: samples, total_linhas: matData.length };
+
+  const result = {
+    headerRaw, header, indices: cI,
+    totalLinhas: data.length,
+    curYear, prevYear,
+    matMatches, canMatches, matNoSigla, canNoSigla, dateInvalidMat, dateInvalidCan,
+    siglaMissingTop: Object.entries(siglaMissing).sort((a,b)=>b[1]-a[1]).slice(0,10),
+    tipoRegValuesTop: Object.entries(tipoRegValues).sort((a,b)=>b[1]-a[1]).slice(0,10),
+    tipoRegSaidaValuesTop: Object.entries(tipoRegSaidaValues).sort((a,b)=>b[1]-a[1]).slice(0,10),
+    samples,
+  };
   Logger.log(JSON.stringify(result, null, 2));
   return result;
 }
 
 // ── Utilitários de cache ──────────────────────────────────────
+// Limpa só as chaves ALL da versão atual. Pra invalidar cache de TODAS as unidades
+// de uma vez (ex.: depois de uma mudança grande), basta trocar CACHE_VERSION no topo do arquivo.
 function clearCache() {
   const cache = CacheService.getScriptCache();
-  cache.removeAll(['kpi_ALL','inad_ALL']);
-  Logger.log('Cache limpo.');
+  cache.removeAll(['kpi_' + CACHE_VERSION + '_ALL', 'inad_' + CACHE_VERSION + '_ALL']);
+  Logger.log('Cache limpo (versão ' + CACHE_VERSION + ').');
 }
 
 // ── Pré-aquecimento de cache ──────────────────────────────────
@@ -428,8 +1015,8 @@ function warmCache() {
     const kpiResult  = JSON.stringify({ ok: true, kpi:  kpiData  });
     const inadResult = JSON.stringify({ ok: true, inad: inadData });
 
-    try { cache.put('kpi_ALL',  kpiResult,  3600); } catch(e) {}
-    try { cache.put('inad_ALL', inadResult, 3600); } catch(e) {}
+    try { cache.put('kpi_'  + CACHE_VERSION + '_ALL', kpiResult,  3600); } catch(e) {}
+    try { cache.put('inad_' + CACHE_VERSION + '_ALL', inadResult, 3600); } catch(e) {}
 
     Logger.log('warmCache OK — kpi=' + kpiResult.length + ' bytes, inad=' + inadResult.length + ' bytes');
   } catch(err) {
@@ -499,26 +1086,15 @@ function diagnostico() {
   } catch(e) { results.hub = 'ERRO: ' + e.message; }
 
   try {
-    const ss = SpreadsheetApp.openById(MATRICULAS_SHEET_ID);
-    const s  = ss.getSheetByName('db_all_since2020');
+    const ss = SpreadsheetApp.openById(PREENCHIMENTO_SHEET_ID);
+    const s  = ss.getSheetByName('Preenchimento');
     if (s) {
       const h = s.getRange(1,1,1,s.getLastColumn()).getValues()[0];
-      results.matriculas         = 'OK — ' + s.getLastRow() + ' linhas';
-      results.matriculas_headers = h.join(' | ');
-      results.matriculas_norm    = h.map(_norm).join(' | ');
-    } else { results.matriculas = 'ERRO: aba não encontrada'; }
-  } catch(e) { results.matriculas = 'ERRO: ' + e.message; }
-
-  try {
-    const ss = SpreadsheetApp.openById(CANCELADOS_SHEET_ID);
-    const s  = ss.getSheetByName('db_Cancelados_All');
-    if (s) {
-      const h = s.getRange(1,1,1,s.getLastColumn()).getValues()[0];
-      results.cancelados         = 'OK — ' + s.getLastRow() + ' linhas';
-      results.cancelados_headers = h.join(' | ');
-      results.cancelados_norm    = h.map(_norm).join(' | ');
-    } else { results.cancelados = 'ERRO: aba não encontrada'; }
-  } catch(e) { results.cancelados = 'ERRO: ' + e.message; }
+      results.preenchimento         = 'OK — ' + s.getLastRow() + ' linhas';
+      results.preenchimento_headers = h.join(' | ');
+      results.preenchimento_norm    = h.map(_norm).join(' | ');
+    } else { results.preenchimento = 'ERRO: aba não encontrada'; }
+  } catch(e) { results.preenchimento = 'ERRO: ' + e.message; }
 
   try {
     const ss = SpreadsheetApp.openById(INADIMPLENCIA_SHEET_ID);
