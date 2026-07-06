@@ -17,7 +17,7 @@ const CACHE_VERSION = 'v8';
 
 const NO_COBRAFIX = new Set(['BF','CH','DT','IP','IT','MR','NL','TQ','LJ','PC','PN']);
 const MEU_ACESSO  = 'boa semana'; // identificador na col H (ACESSOS) da aba SESSOES
-const ALL_UNITS   = ['BF','BG','BOL','CG','CH','CP','CX','DT','FG','IG','IP','IT','LJ','MR','NI','NL','NT','PC','PN','PO','RC','TJ','TQ','VP','VQ'];
+const ALL_UNITS   = ['BF','BG','BOL','CG','CH','CP','CX','DT','FG','GR','IG','IP','IT','LJ','MR','NI','NL','NT','PC','PN','PO','RC','TJ','TQ','VO','VP','VQ'];
 
 const _norm = s => String(s||'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
 
@@ -1222,33 +1222,46 @@ function diagnostico() {
 const WEEKLY_EMAILS_ENABLED = false;
 
 const DIRETORES_UNIDADE = {
-  BF:  ['dirbf@brasas.com'],
-  BG:  ['dirbg@brasas.com'],
-  BOL: ['natasha@brasas.com', 'alexander@brasas.com'],
-  CG:  ['dircg@brasas.com'],
-  CH:  ['dirch@brasas.com'],
-  CP:  ['dircp@brasas.com'],
-  CX:  ['dircx@brasas.com'],
-  DT:  ['dirdt@brasas.com'],
-  FG:  ['dirfg@brasas.com'],
-  IG:  ['dirig@brasas.com', 'marcelo.ig@brasas.com'],
-  IP:  ['dirip@brasas.com'],
-  IT:  ['dirit@brasas.com'],
-  LJ:  ['dirlj@brasas.com'],
-  MR:  ['dirmr@brasas.com'],
-  NI:  ['dirni@brasas.com'],
-  NL:  ['dirnl@brasas.com'],
-  NT:  ['dirnt@brasas.com'],
-  PC:  ['dirpc@brasas.com'],
-  PN:  ['dirpn@brasas.com'],
-  PO:  ['dirpo@brasas.com'],
-  RC:  ['dirrc@brasas.com'],
-  TJ:  ['dirtj@brasas.com'],
-  TQ:  ['dirtq@brasas.com'],
-  VP:  ['dirvp@brasas.com'],
-  VQ:  ['dirvq@brasas.com'],
+  BF:  [{ email: 'dirbf@brasas.com',     nome: 'Paco' }],
+  BG:  [{ email: 'dirbg@brasas.com',     nome: 'Lilly' }],
+  BOL: [{ email: 'natasha@brasas.com',   nome: 'Natasha' }, { email: 'alexander@brasas.com', nome: 'Alex' }],
+  CG:  [{ email: 'dircg@brasas.com',     nome: 'Rafa' }],
+  CH:  [{ email: 'dirch@brasas.com',     nome: 'Anne' }],
+  CP:  [{ email: 'dircp@brasas.com',     nome: 'Angie' }],
+  CX:  [{ email: 'dircx@brasas.com',     nome: 'Monika' }],
+  DT:  [{ email: 'dirdt@brasas.com',     nome: 'Renny' }],
+  FG:  [{ email: 'dirfg@brasas.com',     nome: 'Nelson' }],
+  GR:  [{ email: 'dirgr@brasas.com',     nome: 'Elica' }],
+  IG:  [{ email: 'dirig@brasas.com',     nome: 'Ana' }, { email: 'marcelo.ig@brasas.com', nome: 'Marcelo' }],
+  IP:  [{ email: 'dirip@brasas.com',     nome: 'Angie' }],
+  IT:  [{ email: 'dirit@brasas.com',     nome: 'Isa' }],
+  LJ:  [{ email: 'dirlj@brasas.com',     nome: 'Dennis' }],
+  MR:  [{ email: 'dirmr@brasas.com',     nome: 'Joseph' }],
+  NI:  [{ email: 'dirni@brasas.com',     nome: 'Clay' }],
+  NL:  [{ email: 'dirnl@brasas.com',     nome: 'Kat' }],
+  NT:  [{ email: 'dirnt@brasas.com',     nome: 'Kay' }],
+  PC:  [{ email: 'dirpc@brasas.com',     nome: 'Ashley' }],
+  PN:  [{ email: 'dirpn@brasas.com',     nome: 'Ashley' }],
+  PO:  [{ email: 'dirpo@brasas.com',     nome: 'James' }],
+  RC:  [{ email: 'dirrc@brasas.com',     nome: 'Emerson' }],
+  TJ:  [{ email: 'dirtj@brasas.com',     nome: 'Elica' }],
+  TQ:  [{ email: 'dirtq@brasas.com',     nome: 'Paula' }],
+  VO:  [{ email: 'dirvo@brasas.com',     nome: 'Wess' }],
+  VP:  [{ email: 'dirvp@brasas.com',     nome: 'Brooke' }],
+  VQ:  [{ email: 'dirvq@brasas.com',     nome: 'Rachel' }],
 };
-const EMAILS_TODAS_UNIDADES = ['adriane@brasas.com', 'bruno@brasas.com', 'peter@brasas.com'];
+const EMAILS_TODAS_UNIDADES = [
+  { email: 'adriane@brasas.com', nome: 'Adriane' },
+  { email: 'bruno@brasas.com',   nome: 'Bruno' },
+  { email: 'peter@brasas.com',   nome: 'Peter' },
+];
+
+// Junta nomes em uma saudação natural: "Ana", "Ana e Marcelo", "Ana, Bruno e Peter"
+function _joinNames(names) {
+  if (names.length <= 1) return names[0] || '';
+  if (names.length === 2) return names.join(' e ');
+  return names.slice(0, -1).join(', ') + ' e ' + names[names.length - 1];
+}
 
 // Rode esta função UMA VEZ manualmente pelo editor do Apps Script para instalar o gatilho.
 // O gatilho roda de hora em hora; checkAndSendWeeklyEmails() decide, usando o horário de
@@ -1285,9 +1298,11 @@ function checkAndSendWeeklyEmails() {
 function sendWeeklyEmails() {
   Object.keys(DIRETORES_UNIDADE).forEach(sigla => {
     try {
-      const html = _buildWeeklyEmailHtml([sigla], sigla);
+      const dirs = DIRETORES_UNIDADE[sigla];
+      const nome = _joinNames(dirs.map(d => d.nome));
+      const html = _buildWeeklyEmailHtml([sigla], sigla, nome);
       MailApp.sendEmail({
-        to:       DIRETORES_UNIDADE[sigla].join(','),
+        to:       dirs.map(d => d.email).join(','),
         subject:  `Boa Semana — Resumo semanal (${sigla})`,
         htmlBody: html,
       });
@@ -1295,9 +1310,10 @@ function sendWeeklyEmails() {
   });
 
   try {
-    const html = _buildWeeklyEmailHtml(null, 'Todas as unidades');
+    const nome = _joinNames(EMAILS_TODAS_UNIDADES.map(d => d.nome));
+    const html = _buildWeeklyEmailHtml(null, 'Todas as unidades', nome);
     MailApp.sendEmail({
-      to:       EMAILS_TODAS_UNIDADES.join(','),
+      to:       EMAILS_TODAS_UNIDADES.map(d => d.email).join(','),
       subject:  'Boa Semana — Resumo semanal (Todas as unidades)',
       htmlBody: html,
     });
@@ -1319,7 +1335,10 @@ function testSendWeeklyEmail() {
 
   const units = isAll ? null : [sigla];
   const label = isAll ? 'Todas as unidades' : sigla;
-  const html  = _buildWeeklyEmailHtml(units, label);
+  const nome  = isAll
+    ? _joinNames(EMAILS_TODAS_UNIDADES.map(d => d.nome))
+    : _joinNames(DIRETORES_UNIDADE[sigla].map(d => d.nome));
+  const html  = _buildWeeklyEmailHtml(units, label, nome);
 
   MailApp.sendEmail({
     to:       EMAIL_TESTE,
@@ -1344,6 +1363,63 @@ function _npsColorHex(val) {
 
 function _fmtIntEmail(n) { return Math.round(n||0).toLocaleString('pt-BR'); }
 function _fmtBRLEmail(n) { return 'R$ ' + (n||0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function _fmtPctEmail(n) { return (n === null || n === undefined) ? '—' : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'; }
+
+// Uma métrica dentro do card de ano, igual ao ".year-metric" do painel
+function _yearMetricHtml(label, value, accent) {
+  return `<td style="width:50%;text-align:center;padding:10px 6px;">
+    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#5a8aba;margin-bottom:2px;">${label}</div>
+    <div style="font-size:16px;font-weight:700;color:${accent ? '#ef6370' : '#ffffff'};">${value}</div>
+  </td>`;
+}
+
+// Card "Inadimplência por Ano" de um ano específico, igual ao ".year-card" do painel
+function _yearCardEmailHtml(label, yc) {
+  if (!yc) return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2035;border:1px solid rgba(255,255,255,.07);border-radius:16px;">
+    <tr><td style="text-align:center;padding:10px 16px 8px;font-size:12px;font-weight:700;letter-spacing:.04em;color:#c0d4e9;background:rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.07);border-radius:15px 15px 0 0;">${label}</td></tr>
+    <tr><td style="text-align:center;padding:24px 16px;font-size:13px;color:#5a8aba;">Nenhum dado encontrado.</td></tr>
+  </table>`;
+
+  const hasI = yc.inadpf   !== null;
+  const hasC = yc.cobrafix !== null;
+
+  let metrics;
+  if (hasI && hasC) {
+    metrics = [
+      ['Inad. Acumulada',        _fmtBRLEmail(yc.inadpf.inadAcumulada),   true],
+      ['Títulos a Receber',      _fmtIntEmail(yc.inadpf.titulosAReceber), false],
+      ['Títulos Cobrafix',       _fmtIntEmail(yc.cobrafix.titulos),       false],
+      ['Valor Títulos Cobrafix', _fmtBRLEmail(yc.cobrafix.valor),         false],
+      ['Inadimplência %',        _fmtPctEmail(yc.inadpf.pctInad),         false],
+      ['Ticket Médio',           _fmtBRLEmail(yc.inadpf.ticketMedio),     true],
+    ];
+  } else if (hasI) {
+    metrics = [
+      ['Inad. Acumulada',   _fmtBRLEmail(yc.inadpf.inadAcumulada),   true],
+      ['Títulos a Receber', _fmtIntEmail(yc.inadpf.titulosAReceber), false],
+      ['Ticket Médio',      _fmtBRLEmail(yc.inadpf.ticketMedio),     true],
+      ['Inadimplência %',   _fmtPctEmail(yc.inadpf.pctInad),         false],
+    ];
+  } else if (hasC) {
+    metrics = [
+      ['Títulos Cobrafix',       _fmtIntEmail(yc.cobrafix.titulos)],
+      ['Valor Títulos Cobrafix', _fmtBRLEmail(yc.cobrafix.valor)],
+    ];
+  } else {
+    metrics = [];
+  }
+
+  const rows = [];
+  for (let i = 0; i < metrics.length; i += 2) {
+    const a = metrics[i], b = metrics[i + 1];
+    rows.push(`<tr>${_yearMetricHtml(a[0], a[1], a[2])}${b ? _yearMetricHtml(b[0], b[1], b[2]) : '<td style="width:50%;"></td>'}</tr>`);
+  }
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2035;border:1px solid rgba(255,255,255,.07);border-radius:16px;">
+    <tr><td colspan="2" style="text-align:center;padding:10px 16px 8px;font-size:12px;font-weight:700;letter-spacing:.04em;color:#c0d4e9;background:rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.07);border-radius:15px 15px 0 0;">${label}</td></tr>
+    ${rows.join('')}
+  </table>`;
+}
 
 // Pílula de seção, igual ao ".section-title" do painel
 function _sectionTitleHtml(label) {
@@ -1451,7 +1527,7 @@ function _npsMetersGridHtml(cards) {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows.join('')}</table>`;
 }
 
-function _buildWeeklyEmailHtml(units, unidadeLabel) {
+function _buildWeeklyEmailHtml(units, unidadeLabel, nomeDiretor) {
   const kpi  = _computeKpiData(units);
   const inad = _computeInadData(units);
   const nps  = _computeNpsData(units);
@@ -1470,14 +1546,17 @@ function _buildWeeklyEmailHtml(units, unidadeLabel) {
     { label: 'Ticket Médio',          value: _fmtBRLEmail(inad.total.ticketMedio) },
   ].map(it => `<tr><td style="padding-bottom:12px;">${_statCardHtml(it.label, it.value)}</td></tr>`).join('');
 
+  const anoAtual   = String(new Date().getFullYear());
+  const yearCardAno = _yearCardEmailHtml(anoAtual, inad.yearCards[anoAtual] || null);
+
   return `
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a1628;padding:32px 0;">
   <tr><td align="center">
   <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;font-family:Arial,Helvetica,sans-serif;">
 
     <tr><td style="text-align:center;padding-bottom:24px;">
-      <div style="font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-.02em;">Boa Semana</div>
-      <div style="font-size:12px;color:#89afd4;font-style:italic;margin-top:4px;">BRASAS</div>
+      <div style="font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-.02em;">Boa semana${nomeDiretor ? ', ' + nomeDiretor : ''}!</div>
+      <div style="font-size:12px;color:#89afd4;font-style:italic;margin-top:4px;">BRASAS English Course</div>
       <div style="font-size:13px;color:#c0d4e9;margin-top:14px;">Unidade: <strong style="color:#ffffff;">${unidadeLabel}</strong> &middot; ${Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'dd/MM/yyyy')}</div>
     </td></tr>
 
@@ -1490,8 +1569,11 @@ function _buildWeeklyEmailHtml(units, unidadeLabel) {
     <tr><td style="padding-bottom:14px;">${_sectionTitleHtml('Saldo')}</td></tr>
     <tr><td style="padding-bottom:22px;">${_kpiGroupHtml('Saldo', kpi.saldo, false)}</td></tr>
 
-    <tr><td style="padding-bottom:14px;">${_sectionTitleHtml('Inadimplência')}</td></tr>
-    <tr><td style="padding-bottom:10px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${inadCardsHtml}</table></td></tr>
+    <tr><td style="padding-bottom:14px;">${_sectionTitleHtml('Inadimplência Total')}</td></tr>
+    <tr><td style="padding-bottom:22px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${inadCardsHtml}</table></td></tr>
+
+    <tr><td style="padding-bottom:14px;">${_sectionTitleHtml('Inadimplência ' + anoAtual)}</td></tr>
+    <tr><td style="padding-bottom:10px;">${yearCardAno}</td></tr>
 
     <tr><td style="padding-bottom:14px;padding-top:12px;">${_sectionTitleHtml('NPS')}</td></tr>
     <tr><td style="padding-bottom:6px;">${_npsMetersGridHtml(npsCards)}</td></tr>
