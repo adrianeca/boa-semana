@@ -13,7 +13,7 @@ const NPS_SHEET_ID           = '1JImJD3_KxbOYZ0g7b7ibCau9dMw7g__LrC4cXlqhnnU';
 
 // Bump isto a cada mudança na lógica de _computeKpiData/_computeInadData — invalida
 // automaticamente todo cache antigo (de qualquer unidade), sem precisar rodar clearCache().
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v8';
 
 const NO_COBRAFIX = new Set(['BF','CH','DT','IP','IT','MR','NL','TQ','LJ','PC','PN']);
 const MEU_ACESSO  = 'boa semana'; // identificador na col H (ACESSOS) da aba SESSOES
@@ -38,8 +38,10 @@ const UNIDADE_SIGLA = {
   'copacabana':                'CP',
   'downtown':                  'DT',
   'freguesia':                 'FG',
+  'fg assessoria':             'FG',
   'grajau':                    'GR',
   'ilha do governador':        'IG',
+  'ilha':                      'IG',
   'ipanema':                   'IP',
   'itaipu':                    'IT',
   'meier':                     'MR',
@@ -50,9 +52,12 @@ const UNIDADE_SIGLA = {
   'pechincha':                 'PC',
   'peninsula':                 'PN',
   'polo brasas - bangu':       'BG',
+  'bangu':                     'BG',
   'polo brasas - laranjeiras': 'LJ',
+  'laranjeiras':               'LJ',
   'recreio':                   'RC',
   'taquara':                   'TQ',
+  'tq assessoria':             'TQ',
   'tijuca':                    'TJ',
   'vila da penha':             'VP',
   'vila olimpia':              'VO',
@@ -395,20 +400,20 @@ function _computeInadData(units) {
   // 1. Totais gerais
   const totalData = ss.getSheetByName('inad_total+cobrafix').getDataRange().getValues();
   const totalH    = totalData[0].map(_norm);
+  // Header real da aba (confirmado via debugInadTotal): Data Relatório, Unidade, Mês, Ano,
+  // Títulos, Valor Previsto, Mês/Ano de vencimento — colunas simples, sem "Ajustada"
   const tI = {
-    // "UNIDADE" (sozinha) é um código numérico interno, não a sigla — a sigla real está em
-    // "UNIDADE AJUSTADA", igual ao padrão usado nas outras abas de inadimplência abaixo
-    unidade:   totalH.findIndex(h => h.includes('unidade') && h.includes('ajust')),
-    // Não existe coluna "titulos" sozinha — "QT. TÍTULOS PREVISTO" é o par correto de "VALOR PREVISTO"
-    // (mesma base "previsto"), o que faz o Ticket Médio (valor/títulos) sair coerente
-    titulos:   totalH.findIndex(h => h.includes('titulos') && h.includes('previsto')),
+    unidade:   totalH.findIndex(h => h === 'unidade'),
+    titulos:   totalH.findIndex(h => h === 'titulos'),
     valorPrev: totalH.findIndex(h => h.includes('valor') && h.includes('previsto')),
     dataRel:   totalH.findIndex(h => h.includes('data') && h.includes('relat')),
   };
+  // "Unidade" pode vir como nome completo ("Botafogo") ou já como sigla ("BF"/"BOL") — tenta os dois
+  const _totalUnit = raw => _sigla(raw) || _unitCode(raw);
 
   const latestDate = {};
   for (let i = 1; i < totalData.length; i++) {
-    const unit = _unitCode(totalData[i][tI.unidade]);
+    const unit = _totalUnit(totalData[i][tI.unidade]);
     if (unitSet && !unitSet.has(unit)) continue;
     const d = totalData[i][tI.dataRel] instanceof Date
       ? totalData[i][tI.dataRel] : new Date(totalData[i][tI.dataRel]);
@@ -418,7 +423,7 @@ function _computeInadData(units) {
 
   let totalTitulos = 0, totalValor = 0;
   for (let i = 1; i < totalData.length; i++) {
-    const unit = _unitCode(totalData[i][tI.unidade]);
+    const unit = _totalUnit(totalData[i][tI.unidade]);
     if ((unitSet && !unitSet.has(unit)) || !latestDate[unit]) continue;
     const d = totalData[i][tI.dataRel] instanceof Date
       ? totalData[i][tI.dataRel] : new Date(totalData[i][tI.dataRel]);
@@ -873,6 +878,59 @@ function debugEstatistica() {
         }])
       );
     }
+  } catch(e) { result.erro = e.message; }
+
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+// Diagnóstico da Inadimplência Total (aba inad_total+cobrafix) — roda e olha o Log de Execução
+function debugInadTotal() {
+  const result = {};
+  try {
+    const ss    = SpreadsheetApp.openById(INADIMPLENCIA_SHEET_ID);
+    const sheet = ss.getSheetByName('inad_total+cobrafix');
+    if (!sheet) { result.erro = 'aba não encontrada'; Logger.log(JSON.stringify(result)); return result; }
+
+    const data  = sheet.getDataRange().getValues();
+    result.linhas = data.length;
+    result.header = data[0];
+
+    const normH = data[0].map(_norm);
+    const iUnidade = normH.findIndex(h => h === 'unidade');
+    const iTitulos = normH.findIndex(h => h === 'titulos');
+    const iValor   = normH.findIndex(h => h.includes('valor') && h.includes('previsto'));
+    const iData    = normH.findIndex(h => h.includes('data') && h.includes('relat'));
+    result.indices = { iUnidade, iTitulos, iValor, iData };
+
+    const _totalUnit = raw => _sigla(raw) || _unitCode(raw);
+    let validDates = 0, invalidDates = 0, blankRows = 0;
+    const samples = [];
+    const latestDate = {};
+    for (let i = 1; i < data.length; i++) {
+      const r = data[i];
+      if (!r[iUnidade] && !r[iData]) { blankRows++; continue; } // linha vazia no fim da planilha
+      const unit = _totalUnit(r[iUnidade]);
+      const d    = r[iData] instanceof Date ? r[iData] : new Date(r[iData]);
+      if (isNaN(d.getTime())) {
+        invalidDates++;
+      } else {
+        validDates++;
+        if (!latestDate[unit] || d > latestDate[unit]) latestDate[unit] = d;
+      }
+      if (samples.length < 20) samples.push({
+        linha: i + 1, unidadeRaw: r[iUnidade], unit,
+        dataRelRaw: r[iData], dataRelType: typeof r[iData], isDateObj: r[iData] instanceof Date,
+        parsedValid: !isNaN(d.getTime()), titulos: r[iTitulos], valor: r[iValor],
+      });
+    }
+    result.amostrasPrimeirasLinhasComDados = samples;
+    result.linhasEmBranco = blankRows;
+    result.datasValidas   = validDates;
+    result.datasInvalidas = invalidDates;
+    result.latestDatePorUnidade = Object.fromEntries(
+      Object.entries(latestDate).map(([u, d]) => [u, Utilities.formatDate(d, Session.getScriptTimeZone() || 'America/Sao_Paulo', 'yyyy-MM-dd')])
+    );
   } catch(e) { result.erro = e.message; }
 
   Logger.log(JSON.stringify(result, null, 2));
