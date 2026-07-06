@@ -13,17 +13,24 @@ const NPS_SHEET_ID           = '1JImJD3_KxbOYZ0g7b7ibCau9dMw7g__LrC4cXlqhnnU';
 
 // Bump isto a cada mudança na lógica de _computeKpiData/_computeInadData — invalida
 // automaticamente todo cache antigo (de qualquer unidade), sem precisar rodar clearCache().
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v6';
 
 const NO_COBRAFIX = new Set(['BF','CH','DT','IP','IT','MR','NL','TQ','LJ','PC','PN']);
 const MEU_ACESSO  = 'boa semana'; // identificador na col H (ACESSOS) da aba SESSOES
-const ALL_UNITS   = ['BF','BG','CG','CH','CP','CX','DT','FG','IG','IP','IT','LJ','MR','NI','NL','NT','PC','PN','PO','RC','TJ','TQ','VP','VQ'];
+const ALL_UNITS   = ['BF','BG','BOL','CG','CH','CP','CX','DT','FG','IG','IP','IT','LJ','MR','NI','NL','NT','PC','PN','PO','RC','TJ','TQ','VP','VQ'];
 
 const _norm = s => String(s||'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+
+// Algumas bases gravam "ONLINE" ou "Métodos Online" em vez da sigla "BOL" para a mesma unidade
+const UNIT_CODE_ALIASES = { 'online': 'BOL', 'metodos online': 'BOL', 'bol': 'BOL' };
+// Usado onde a coluna já vem com a sigla (não o nome completo) — unifica as variações acima
+const _unitCode = raw => UNIT_CODE_ALIASES[_norm(raw)] || String(raw||'').trim().toUpperCase();
 
 // ── Equivalência nome completo da unidade (col Unidade da aba Preenchimento) → sigla ──
 const UNIDADE_SIGLA = {
   'bol':                       'BOL',
+  'online':                    'BOL',
+  'metodos online':            'BOL',
   'botafogo':                  'BF',
   'cachambi':                  'CH',
   'campo grande':              'CG',
@@ -217,7 +224,7 @@ function _authAndAccess(token) {
       // Col E (índice 4) = UNIDADE, separado por pipe; vazio = acesso a todas
       const unidadeRaw  = String(data[i][4]||'').trim();
       const unidades    = unidadeRaw
-        ? unidadeRaw.split('|').map(u => u.trim().toUpperCase()).filter(Boolean)
+        ? unidadeRaw.split('|').map(u => _unitCode(u)).filter(Boolean)
         : null; // null = acesso a todas as unidades
 
       const result = {
@@ -244,7 +251,7 @@ function _authAndAccess(token) {
 // false = sem permissão | null = todas as unidades | string[] = unidades específicas
 function _resolveUnits(access, unitFilter) {
   if (!unitFilter) return access.unidades; // null = todas, array = específicas
-  const f = String(unitFilter).trim().toUpperCase();
+  const f = _unitCode(unitFilter);
   if (access.unidades === null) return [f]; // acesso total → qualquer unidade ok
   return access.unidades.includes(f) ? [f] : false;
 }
@@ -389,15 +396,19 @@ function _computeInadData(units) {
   const totalData = ss.getSheetByName('inad_total+cobrafix').getDataRange().getValues();
   const totalH    = totalData[0].map(_norm);
   const tI = {
-    unidade:   totalH.findIndex(h => h === 'unidade'),
-    titulos:   totalH.findIndex(h => h === 'titulos'),
+    // "UNIDADE" (sozinha) é um código numérico interno, não a sigla — a sigla real está em
+    // "UNIDADE AJUSTADA", igual ao padrão usado nas outras abas de inadimplência abaixo
+    unidade:   totalH.findIndex(h => h.includes('unidade') && h.includes('ajust')),
+    // Não existe coluna "titulos" sozinha — "QT. TÍTULOS PREVISTO" é o par correto de "VALOR PREVISTO"
+    // (mesma base "previsto"), o que faz o Ticket Médio (valor/títulos) sair coerente
+    titulos:   totalH.findIndex(h => h.includes('titulos') && h.includes('previsto')),
     valorPrev: totalH.findIndex(h => h.includes('valor') && h.includes('previsto')),
     dataRel:   totalH.findIndex(h => h.includes('data') && h.includes('relat')),
   };
 
   const latestDate = {};
   for (let i = 1; i < totalData.length; i++) {
-    const unit = String(totalData[i][tI.unidade]||'').trim().toUpperCase();
+    const unit = _unitCode(totalData[i][tI.unidade]);
     if (unitSet && !unitSet.has(unit)) continue;
     const d = totalData[i][tI.dataRel] instanceof Date
       ? totalData[i][tI.dataRel] : new Date(totalData[i][tI.dataRel]);
@@ -407,7 +418,7 @@ function _computeInadData(units) {
 
   let totalTitulos = 0, totalValor = 0;
   for (let i = 1; i < totalData.length; i++) {
-    const unit = String(totalData[i][tI.unidade]||'').trim().toUpperCase();
+    const unit = _unitCode(totalData[i][tI.unidade]);
     if ((unitSet && !unitSet.has(unit)) || !latestDate[unit]) continue;
     const d = totalData[i][tI.dataRel] instanceof Date
       ? totalData[i][tI.dataRel] : new Date(totalData[i][tI.dataRel]);
@@ -428,7 +439,7 @@ function _computeInadData(units) {
       dataVcto:  baixH.findIndex(h => h === 'data_vcto'),
     };
     for (let i = 1; i < baixData.length; i++) {
-      const unit = String(baixData[i][bI.unidadeAj]||'').trim().toUpperCase();
+      const unit = _unitCode(baixData[i][bI.unidadeAj]);
       if (cobraSet ? !cobraSet.has(unit) : NO_COBRAFIX.has(unit)) continue;
       const dv = baixData[i][bI.dataVcto];
       const d  = dv instanceof Date ? dv : new Date(dv);
@@ -453,7 +464,7 @@ function _computeInadData(units) {
 
   const inadpfByYear = {};
   for (let i = 1; i < inadpfData.length; i++) {
-    const unit = String(inadpfData[i][iI.unidadeAj]||'').trim().toUpperCase();
+    const unit = _unitCode(inadpfData[i][iI.unidadeAj]);
     const ano  = parseInt(inadpfData[i][iI.ano]);
     if (!ano || (unitSet && !unitSet.has(unit))) continue;
     if (!NO_COBRAFIX.has(unit) && ano < 2025) continue;
@@ -522,7 +533,7 @@ function _computeInadWeekly(ss, unitSet) {
   const pfData = ss.getSheetByName('db_inadimplência_pf').getDataRange().getValues();
   for (let i = 1; i < pfData.length; i++) {
     const r = pfData[i];
-    const unit = String(r[21]||'').trim().toUpperCase(); // V
+    const unit = _unitCode(r[21]); // V
     if (unitSet && !unitSet.has(unit)) continue;
     addRow(parseInt(r[5]), r[20], parseFloat(r[8]) || 0); // F, U, I
   }
@@ -530,7 +541,7 @@ function _computeInadWeekly(ss, unitSet) {
   const baixData = ss.getSheetByName('db_baixados').getDataRange().getValues();
   for (let i = 1; i < baixData.length; i++) {
     const r = baixData[i];
-    const unit = String(r[10]||'').trim().toUpperCase(); // K
+    const unit = _unitCode(r[10]); // K
     if (unitSet && !unitSet.has(unit)) continue;
     const dIndiv = r[4] instanceof Date ? r[4] : new Date(r[4]); // E
     if (isNaN(dIndiv.getTime())) continue;
@@ -602,7 +613,7 @@ function _computeEstatisticaCards(units) {
   const latest = {}; // sigla -> { row, ts }
   for (let i = 1; i < data.length; i++) {
     const r = data[i];
-    const sigla = String(r[3]||'').trim().toUpperCase(); // Unidade — já vem como sigla nessa aba
+    const sigla = _unitCode(r[3]); // Unidade — já vem como sigla nessa aba
     if (!sigla || (unitSet && !unitSet.has(sigla))) continue;
     const ts = r[0] instanceof Date ? r[0] : new Date(r[0]); // Carimbo de data/hora
     if (isNaN(ts.getTime())) continue;
@@ -634,11 +645,16 @@ function _computeEstatisticaCards(units) {
 }
 
 // ── NPS ─────────────────────────────────────────────────────
-// Aba "C - A e K" (pesquisa de cancelamento, Adults + Kids):
-//   0 Carimbo · 2 Nome · 5 Livro em que parou (Book) · 7 Motivo do Cancelamento
+// Aba "C - A e K" (pesquisa de cancelamento, Adults + Kids — todas as unidades exceto BOL):
+//   0 Carimbo (data/hora real de envio) · 2 Nome · 5 Livro em que parou (Book) · 7 Motivo do Cancelamento
 //   9 Nota (Qual é a chance de indicar) · 10 Críticas/Sugestões/Elogios
-//   12 Data Resposta · 13 Pesquisa (Adults/Kids) · 14 Unidade Ajustada (sigla)
-// Aba "N - All" (pesquisa de mudança de nível):
+//   12 Data Resposta (dia 1º do mês do lote — NÃO é a data de envio, só serve p/ agregação mensal)
+//   13 Pesquisa (Adults/Kids) · 14 Unidade Ajustada (sigla)
+// Aba "C - BOL" (pesquisa de cancelamento exclusiva da unidade BOL/Online — sem separação Adults/Kids,
+// vira o medidor "Cancelados"; sem coluna de Carimbo, por isso usa a própria "Data Resposta"):
+//   1 Nome · 4 Motivo do Cancelamento · 6 Nota · 7 Críticas/Sugestões/Elogios
+//   8 Em que livro parou (Book) · 10 Data Resposta (data real da resposta nessa aba)
+// Aba "N - All" (pesquisa de mudança de nível — comum a todas as unidades, inclusive BOL):
 //   9 Nota · 12 Data Resposta · 14 UNIDADE AJUSTADA (sigla)
 // NPS = (%promotores [nota 9-10] − %detratores [nota 0-6]) × 100
 function _computeNpsData(units) {
@@ -647,40 +663,64 @@ function _computeNpsData(units) {
 
   const cakData  = ss.getSheetByName('C - A e K').getDataRange().getValues();
   const nAllData = ss.getSheetByName('N - All').getDataRange().getValues();
+  const bolData  = ss.getSheetByName('C - BOL').getDataRange().getValues();
 
   const cakRows = cakData.slice(1).filter(r => {
-    const unit = String(r[14]||'').trim().toUpperCase();
+    const unit = _unitCode(r[14]);
     return unit && (!unitSet || unitSet.has(unit));
   });
   const adultsRows = cakRows.filter(r => _norm(r[13]).includes('adult'));
   const kidsRows   = cakRows.filter(r => _norm(r[13]).includes('kids'));
 
   const nAllRows = nAllData.slice(1).filter(r => {
-    const unit = String(r[14]||'').trim().toUpperCase();
+    const unit = _unitCode(r[14]);
     return unit && (!unitSet || unitSet.has(unit));
   });
 
-  const adults = _npsScore(adultsRows, 9);
-  const kids   = _npsScore(kidsRows, 9);
-  const nivel  = _npsScore(nAllRows, 9);
+  // C - BOL: toda a aba é da unidade BOL (não tem coluna de unidade) — só entra se BOL estiver no escopo
+  const bolApplicable  = !unitSet || unitSet.has('BOL');
+  const bolOnlyFilter  = !!(unitSet && unitSet.size === 1 && unitSet.has('BOL'));
+  const bolRows = bolApplicable ? bolData.slice(1) : [];
 
-  // Data da última resposta — respeita o filtro de unidade, combina as duas pesquisas
+  // Filtrando só por BOL, Adults/Kids (que são da C - A e K, não tem BOL) ficam zerados
+  const adults     = bolOnlyFilter ? { nps: null, total: 0, promoters: 0, detractors: 0 } : _npsScore(adultsRows, 9);
+  const kids       = bolOnlyFilter ? { nps: null, total: 0, promoters: 0, detractors: 0 } : _npsScore(kidsRows, 9);
+  const nivel      = _npsScore(nAllRows, 9);
+  const cancelados = _npsScore(bolRows, 6);
+
+  // Data da última resposta — respeita o filtro de unidade, combina as pesquisas
+  // C - A e K / N - All usam o Carimbo (data real de envio); C - BOL não tem Carimbo, usa a Data Resposta
   let lastResponse = null;
   [...cakRows, ...nAllRows].forEach(r => {
-    const d = r[12] instanceof Date ? r[12] : new Date(r[12]);
+    const d = r[0] instanceof Date ? r[0] : new Date(r[0]);
+    if (!isNaN(d.getTime()) && (!lastResponse || d > lastResponse)) lastResponse = d;
+  });
+  bolRows.forEach(r => {
+    const d = r[10] instanceof Date ? r[10] : new Date(r[10]);
     if (!isNaN(d.getTime()) && (!lastResponse || d > lastResponse)) lastResponse = d;
   });
 
-  // Tabela de respostas recentes — SEM filtro de unidade (todos veem de todos),
-  // só a pesquisa de cancelamento (C - A e K), últimos 14 dias
+  // Tabela de respostas recentes — SEM filtro de unidade (todos veem de todos), últimos 15 dias
+  // C - A e K usa o Carimbo (col 0); C - BOL usa a Data Resposta (col 10, única data confiável na aba)
   const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 14);
-  const recent = cakData.slice(1)
-    .map(r => ({ r, d: r[12] instanceof Date ? r[12] : new Date(r[12]) }))
+  cutoff.setDate(cutoff.getDate() - 15);
+  const recentRaw = [
+    ...cakData.slice(1).map(r => ({ r, d: r[0]  instanceof Date ? r[0]  : new Date(r[0]),  src: 'cak' })),
+    ...bolData.slice(1).map(r => ({ r, d: r[10] instanceof Date ? r[10] : new Date(r[10]), src: 'bol' })),
+  ];
+  const recent = recentRaw
     .filter(({ d }) => !isNaN(d.getTime()) && d >= cutoff)
     .sort((a, b) => b.d - a.d)
-    .map(({ r, d }) => ({
-      unidade:  String(r[14]||'').trim().toUpperCase(),
+    .map(({ r, d, src }) => src === 'bol' ? ({
+      unidade:  'BOL',
+      data:     _dateKey(d),
+      nome:     String(r[1]||''),
+      book:     String(r[8]||''),
+      nota:     r[6] === '' || r[6] === null || r[6] === undefined ? null : parseFloat(r[6]),
+      motivo:   String(r[4]||''),
+      criticas: String(r[7]||''),
+    }) : ({
+      unidade:  _unitCode(r[14]),
       data:     _dateKey(d),
       nome:     String(r[2]||''),
       book:     String(r[5]||''),
@@ -690,7 +730,11 @@ function _computeNpsData(units) {
     }));
 
   return {
-    adults, kids, mudancaNivel: nivel,
+    adults, kids, mudancaNivel: nivel, cancelados,
+    // Controla quais medidores o frontend exibe: unidade BOL só mostra Cancelados (não Adults/Kids),
+    // as demais unidades só mostram Adults/Kids (não Cancelados); "todas as unidades" mostra os 4
+    showAdultsKids:  !bolOnlyFilter,
+    showCancelados:  bolApplicable,
     lastResponse: lastResponse ? _dateKey(lastResponse) : null,
     recent,
   };
@@ -807,7 +851,7 @@ function debugEstatistica() {
       const latest = {};
       for (let i = 1; i < data.length; i++) {
         const r = data[i];
-        const sigla = String(r[3]||'').trim().toUpperCase();
+        const sigla = _unitCode(r[3]);
         if (!sigla) siglaMissing[String(r[3])] = (siglaMissing[String(r[3])] || 0) + 1;
         const ts = r[0] instanceof Date ? r[0] : new Date(r[0]);
         if (isNaN(ts.getTime())) { carimbosInvalidos++; } else {
@@ -1107,4 +1151,299 @@ function diagnostico() {
   results.tempo_total_ms = new Date() - t0;
   Logger.log(JSON.stringify(results, null, 2));
   return results;
+}
+
+// ── Email semanal para diretores ───────────────────────────────
+// Toda segunda-feira ao meio-dia (horário de Brasília), cada diretor recebe um resumo
+// com os KPIs da própria unidade; adriane/bruno/peter recebem a visão de todas as unidades.
+
+// Trava de segurança: enquanto for false, checkAndSendWeeklyEmails() (o gatilho automático)
+// não envia nada — só retorna. Mude para true quando terminar os ajustes e quiser ligar de
+// verdade o envio semanal. Isso NÃO afeta testSendWeeklyEmail() nem sendWeeklyEmails() rodadas
+// manualmente pelo editor — só bloqueia o disparo automático pelo gatilho.
+const WEEKLY_EMAILS_ENABLED = false;
+
+const DIRETORES_UNIDADE = {
+  BF:  ['dirbf@brasas.com'],
+  BG:  ['dirbg@brasas.com'],
+  BOL: ['natasha@brasas.com', 'alexander@brasas.com'],
+  CG:  ['dircg@brasas.com'],
+  CH:  ['dirch@brasas.com'],
+  CP:  ['dircp@brasas.com'],
+  CX:  ['dircx@brasas.com'],
+  DT:  ['dirdt@brasas.com'],
+  FG:  ['dirfg@brasas.com'],
+  IG:  ['dirig@brasas.com', 'marcelo.ig@brasas.com'],
+  IP:  ['dirip@brasas.com'],
+  IT:  ['dirit@brasas.com'],
+  LJ:  ['dirlj@brasas.com'],
+  MR:  ['dirmr@brasas.com'],
+  NI:  ['dirni@brasas.com'],
+  NL:  ['dirnl@brasas.com'],
+  NT:  ['dirnt@brasas.com'],
+  PC:  ['dirpc@brasas.com'],
+  PN:  ['dirpn@brasas.com'],
+  PO:  ['dirpo@brasas.com'],
+  RC:  ['dirrc@brasas.com'],
+  TJ:  ['dirtj@brasas.com'],
+  TQ:  ['dirtq@brasas.com'],
+  VP:  ['dirvp@brasas.com'],
+  VQ:  ['dirvq@brasas.com'],
+};
+const EMAILS_TODAS_UNIDADES = ['adriane@brasas.com', 'bruno@brasas.com', 'peter@brasas.com'];
+
+// Rode esta função UMA VEZ manualmente pelo editor do Apps Script para instalar o gatilho.
+// O gatilho roda de hora em hora; checkAndSendWeeklyEmails() decide, usando o horário de
+// Brasília, se é o momento certo de disparar — assim não depende do fuso-horário do projeto.
+function setupWeeklyEmailTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'checkAndSendWeeklyEmails')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('checkAndSendWeeklyEmails').timeBased().everyHours(1).create();
+}
+
+// Disparado pelo gatilho horário criado em setupWeeklyEmailTrigger().
+// Só envia às segundas-feiras, às 12h no horário de Brasília, e no máximo uma vez por dia
+// (guarda a data do último envio em Properties para não duplicar se o gatilho disparar de novo).
+function checkAndSendWeeklyEmails() {
+  if (!WEEKLY_EMAILS_ENABLED) return; // trava de segurança — ver comentário em WEEKLY_EMAILS_ENABLED
+
+  const tz      = 'America/Sao_Paulo';
+  const now     = new Date();
+  const weekday = Utilities.formatDate(now, tz, 'u'); // 1 = segunda-feira
+  const hour    = Number(Utilities.formatDate(now, tz, 'H'));
+  if (weekday !== '1' || hour !== 12) return;
+
+  const props    = PropertiesService.getScriptProperties();
+  const todayKey = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+  if (props.getProperty('weeklyEmailSentOn') === todayKey) return;
+
+  sendWeeklyEmails();
+  props.setProperty('weeklyEmailSentOn', todayKey);
+}
+
+// Envia o resumo semanal para cada diretor de unidade + a visão de todas as unidades.
+// Pode ser rodada manualmente pelo editor do Apps Script para testar/reenviar.
+function sendWeeklyEmails() {
+  Object.keys(DIRETORES_UNIDADE).forEach(sigla => {
+    try {
+      const html = _buildWeeklyEmailHtml([sigla], sigla);
+      MailApp.sendEmail({
+        to:       DIRETORES_UNIDADE[sigla].join(','),
+        subject:  `Boa Semana — Resumo semanal (${sigla})`,
+        htmlBody: html,
+      });
+    } catch(e) { Logger.log('Erro ao enviar email da unidade ' + sigla + ': ' + e.message); }
+  });
+
+  try {
+    const html = _buildWeeklyEmailHtml(null, 'Todas as unidades');
+    MailApp.sendEmail({
+      to:       EMAILS_TODAS_UNIDADES.join(','),
+      subject:  'Boa Semana — Resumo semanal (Todas as unidades)',
+      htmlBody: html,
+    });
+  } catch(e) { Logger.log('Erro ao enviar email de todas as unidades: ' + e.message); }
+}
+
+// Teste rápido: manda o resumo de UMA unidade só para o seu próprio email (não para o diretor real).
+// Troque SIGLA_TESTE/EMAIL_TESTE abaixo e rode esta função pelo editor do Apps Script.
+function testSendWeeklyEmail() {
+  const SIGLA_TESTE = 'RC';                    // sigla da unidade (ex: 'RC', 'BOL') ou 'ALL' p/ todas as unidades
+  const EMAIL_TESTE = 'adriane@brasas.com';    // para onde o email de teste vai
+
+  const sigla = String(SIGLA_TESTE||'').trim().toUpperCase();
+  const isAll = sigla === 'ALL' || sigla === 'TODAS';
+  if (!isAll && !DIRETORES_UNIDADE[sigla]) {
+    Logger.log('Unidade "' + sigla + '" inválida. Use uma sigla de DIRETORES_UNIDADE ou "ALL".');
+    return;
+  }
+
+  const units = isAll ? null : [sigla];
+  const label = isAll ? 'Todas as unidades' : sigla;
+  const html  = _buildWeeklyEmailHtml(units, label);
+
+  MailApp.sendEmail({
+    to:       EMAIL_TESTE,
+    subject:  `[TESTE] Boa Semana — Resumo semanal (${label})`,
+    htmlBody: html,
+  });
+  Logger.log('Email de teste enviado para ' + EMAIL_TESTE + ' — unidade: ' + label);
+}
+
+function _dateBR(key) {
+  if (!key) return '';
+  const p = key.split('-');
+  return `${p[2]}/${p[1]}/${p[0]}`;
+}
+
+function _npsColorHex(val) {
+  if (val === null || val === undefined) return '#5a8aba';
+  if (val >= 70) return '#4ade80';
+  if (val < 40)  return '#ef6370';
+  return '#eab308';
+}
+
+function _fmtIntEmail(n) { return Math.round(n||0).toLocaleString('pt-BR'); }
+function _fmtBRLEmail(n) { return 'R$ ' + (n||0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+// Pílula de seção, igual ao ".section-title" do painel
+function _sectionTitleHtml(label) {
+  return `<div style="text-align:center;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#c0d4e9;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:10px 20px;">${label}</div>`;
+}
+
+// Badge de variação %, igual ao ".kpi-card-badge" do painel (verde/vermelho conforme invert)
+function _pctBadgeHtml(pct, invert) {
+  if (pct === null || pct === undefined) return '';
+  if (+pct === 0) return `<div style="display:inline-block;margin-top:6px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,.08);color:#89afd4;">0,0%</div>`;
+  const isUp   = pct > 0;
+  const isGood = invert ? !isUp : isUp;
+  const bg     = isGood ? 'rgba(74,222,128,.15)' : 'rgba(239,99,112,.15)';
+  const color  = isGood ? '#4ade80' : '#ef6370';
+  const sign   = isUp ? '▲' : '▼';
+  return `<div style="display:inline-block;margin-top:6px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;background:${bg};color:${color};">${sign} ${Math.abs(pct).toFixed(1).replace('.',',')}%</div>`;
+}
+
+// Card com 3 colunas (Mês/Trimestre/Ano), igual ao ".kpi-group" do painel
+function _kpiGroupHtml(groupLabel, data, invert) {
+  const cols = [
+    { period: 'Este Mês',       d: data.mes },
+    { period: 'Este Trimestre', d: data.tri },
+    { period: 'Este Ano',       d: data.ano },
+  ];
+  const tds = cols.map((c, i) => {
+    const val    = c.d ? c.d.val : 0;
+    const pct    = c.d ? c.d.pct : null;
+    const isNeg  = val < 0;
+    const border = i < cols.length - 1 ? 'border-right:1px solid rgba(255,255,255,.06);' : '';
+    return `<td style="padding:16px 8px 18px;text-align:center;${border}">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#89afd4;margin-bottom:8px;">${c.period}</div>
+      <div style="font-size:22px;font-weight:700;letter-spacing:-.02em;color:${isNeg ? '#ef6370' : '#ffffff'};">${_fmtIntEmail(val)}</div>
+      ${_pctBadgeHtml(pct, invert)}
+    </td>`;
+  }).join('');
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2035;border:1px solid rgba(255,255,255,.07);border-radius:16px;">
+    <tr><td colspan="3" style="text-align:center;padding:11px 16px 9px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#c0d4e9;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.07);border-radius:15px 15px 0 0;">${groupLabel}</td></tr>
+    <tr>${tds}</tr>
+  </table>`;
+}
+
+// Card único, igual ao ".inad-kpi" do painel
+function _statCardHtml(label, value) {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2035;border:1px solid rgba(255,255,255,.07);border-radius:16px;">
+    <tr><td style="padding:18px 20px;text-align:center;">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#89afd4;margin-bottom:8px;">${label}</div>
+      <div style="font-size:22px;font-weight:700;letter-spacing:-.02em;color:#ffffff;">${value}</div>
+    </td></tr>
+  </table>`;
+}
+
+// Medidor de NPS com barra (-100 a 100), igual ao ".nps-meter-card" do painel — construído com
+// larguras de <td> (não position:absolute) pra funcionar em clientes de email como o Outlook
+function _npsMeterHtml(label, data) {
+  const val      = (data && data.nps !== null && data.nps !== undefined) ? data.nps : null;
+  const valLabel = val === null ? '—' : val.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+  let barHtml;
+  if (val === null) {
+    barHtml = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="background:rgba(255,255,255,.08);border-radius:4px;height:8px;line-height:8px;font-size:0;">&nbsp;</td></tr></table>`;
+  } else {
+    const clamped   = Math.max(-100, Math.min(100, val));
+    const pct       = (clamped + 100) / 200 * 100;
+    const color     = _npsColorHex(val);
+    const leftPct   = clamped >= 0 ? 50 : pct;
+    const widthPct  = Math.abs(pct - 50);
+    const rightPct  = 100 - leftPct - widthPct;
+    const track     = 'background:rgba(255,255,255,.08);height:8px;line-height:8px;font-size:0;';
+    barHtml = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      ${leftPct  > 0.5 ? `<td width="${leftPct}%"  style="${track}">&nbsp;</td>` : ''}
+      ${widthPct > 0.5 ? `<td width="${widthPct}%" style="background:${color};height:8px;line-height:8px;font-size:0;">&nbsp;</td>` : ''}
+      ${rightPct > 0.5 ? `<td width="${rightPct}%" style="${track}">&nbsp;</td>` : ''}
+    </tr></table>`;
+  }
+
+  const subLabel = (!data || !data.total) ? 'sem respostas' : `${data.total} resposta${data.total === 1 ? '' : 's'}`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2035;border:1px solid rgba(255,255,255,.07);border-radius:16px;">
+    <tr><td style="padding:18px 18px 16px;text-align:center;">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#89afd4;margin-bottom:8px;">${label}</div>
+      <div style="font-size:24px;font-weight:700;letter-spacing:-.02em;color:#ffffff;margin-bottom:12px;">${valLabel}</div>
+      ${barHtml}
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:6px;"><tr>
+        <td style="font-size:10px;color:#5a8aba;text-align:left;">-100</td>
+        <td style="font-size:10px;color:#5a8aba;text-align:center;">0</td>
+        <td style="font-size:10px;color:#5a8aba;text-align:right;">100</td>
+      </tr></table>
+      <div style="font-size:11px;color:#5a8aba;margin-top:8px;">${subLabel}</div>
+    </td></tr>
+  </table>`;
+}
+
+// Grade 2x2 dos medidores de NPS
+function _npsMetersGridHtml(cards) {
+  const rows = [];
+  for (let i = 0; i < cards.length; i += 2) {
+    const left  = cards[i];
+    const right = cards[i + 1];
+    rows.push(`<tr>
+      <td style="width:50%;padding:0 8px 16px 0;vertical-align:top;">${_npsMeterHtml(left.label, left.data)}</td>
+      <td style="width:50%;padding:0 0 16px 8px;vertical-align:top;">${right ? _npsMeterHtml(right.label, right.data) : ''}</td>
+    </tr>`);
+  }
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows.join('')}</table>`;
+}
+
+function _buildWeeklyEmailHtml(units, unidadeLabel) {
+  const kpi  = _computeKpiData(units);
+  const inad = _computeInadData(units);
+  const nps  = _computeNpsData(units);
+
+  const npsCards = [];
+  if (nps.showAdultsKids) {
+    npsCards.push({ label: 'Adults', data: nps.adults });
+    npsCards.push({ label: 'Kids',   data: nps.kids });
+  }
+  if (nps.showCancelados) npsCards.push({ label: 'Cancelados', data: nps.cancelados });
+  npsCards.push({ label: 'Mudança de Nível', data: nps.mudancaNivel });
+
+  const inadCardsHtml = [
+    { label: 'Valor Previsto',        value: _fmtBRLEmail(inad.total.valorPrevisto) },
+    { label: 'Quantidade de Títulos', value: _fmtIntEmail(inad.total.titulos) },
+    { label: 'Ticket Médio',          value: _fmtBRLEmail(inad.total.ticketMedio) },
+  ].map(it => `<tr><td style="padding-bottom:12px;">${_statCardHtml(it.label, it.value)}</td></tr>`).join('');
+
+  return `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a1628;padding:32px 0;">
+  <tr><td align="center">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;font-family:Arial,Helvetica,sans-serif;">
+
+    <tr><td style="text-align:center;padding-bottom:24px;">
+      <div style="font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-.02em;">Boa Semana</div>
+      <div style="font-size:12px;color:#89afd4;font-style:italic;margin-top:4px;">BRASAS</div>
+      <div style="font-size:13px;color:#c0d4e9;margin-top:14px;">Unidade: <strong style="color:#ffffff;">${unidadeLabel}</strong> &middot; ${Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'dd/MM/yyyy')}</div>
+    </td></tr>
+
+    <tr><td style="padding-bottom:14px;">${_sectionTitleHtml('Matrículas')}</td></tr>
+    <tr><td style="padding-bottom:22px;">${_kpiGroupHtml('Matrículas', kpi.matriculas, false)}</td></tr>
+
+    <tr><td style="padding-bottom:14px;">${_sectionTitleHtml('Cancelados')}</td></tr>
+    <tr><td style="padding-bottom:22px;">${_kpiGroupHtml('Cancelados', kpi.cancelados, true)}</td></tr>
+
+    <tr><td style="padding-bottom:14px;">${_sectionTitleHtml('Saldo')}</td></tr>
+    <tr><td style="padding-bottom:22px;">${_kpiGroupHtml('Saldo', kpi.saldo, false)}</td></tr>
+
+    <tr><td style="padding-bottom:14px;">${_sectionTitleHtml('Inadimplência')}</td></tr>
+    <tr><td style="padding-bottom:10px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${inadCardsHtml}</table></td></tr>
+
+    <tr><td style="padding-bottom:14px;padding-top:12px;">${_sectionTitleHtml('NPS')}</td></tr>
+    <tr><td style="padding-bottom:6px;">${_npsMetersGridHtml(npsCards)}</td></tr>
+    ${nps.lastResponse ? `<tr><td style="text-align:center;font-size:12px;color:#5a8aba;padding-bottom:20px;">Última resposta: ${_dateBR(nps.lastResponse)}</td></tr>` : ''}
+
+    <tr><td style="text-align:center;padding-top:8px;">
+      <a href="${HUB_URL}" style="display:inline-block;background:#2a4d76;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;">Abrir o painel completo →</a>
+    </td></tr>
+
+  </table>
+  </td></tr>
+  </table>`;
 }
