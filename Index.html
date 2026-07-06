@@ -631,23 +631,20 @@ function ym(label, value, accent) {
 // ── Inadimplência semanal (barras) ─────────────────────────────
 function _renderWeekly(weekly) {
   const grid = document.getElementById('weeklyGrid');
-  if (!weekly || !weekly.labels || !weekly.labels.length) {
+  const years = (weekly && weekly.years) || [];
+  if (!weekly || !weekly.labels || !weekly.labels.length || !years.length) {
     grid.innerHTML = '<div class="placeholder-section" style="grid-column:1/-1">Sem dados de relatório semanal encontrados.</div>';
     return;
   }
 
-  grid.innerHTML = `
+  // Os anos vêm do backend (ano anterior + ano atual) — nada fixo aqui
+  grid.innerHTML = years.map(y => `
     <div class="weekly-card">
-      <div class="weekly-card-title">2025</div>
-      <canvas class="weekly-chart" id="weeklyChart2025"></canvas>
-    </div>
-    <div class="weekly-card">
-      <div class="weekly-card-title">2026</div>
-      <canvas class="weekly-chart" id="weeklyChart2026"></canvas>
-    </div>`;
+      <div class="weekly-card-title">${y.ano}</div>
+      <canvas class="weekly-chart" id="weeklyChart${y.ano}"></canvas>
+    </div>`).join('');
 
-  drawBarChart(document.getElementById('weeklyChart2025'), weekly.y2025);
-  drawBarChart(document.getElementById('weeklyChart2026'), weekly.y2026);
+  years.forEach(y => drawBarChart(document.getElementById('weeklyChart' + y.ano), y.points));
 }
 
 function drawBarChart(canvas, points, opts) {

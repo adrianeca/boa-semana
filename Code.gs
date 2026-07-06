@@ -13,7 +13,23 @@ const NPS_SHEET_ID           = '1JImJD3_KxbOYZ0g7b7ibCau9dMw7g__LrC4cXlqhnnU';
 
 // Bump isto a cada mudança na lógica de _computeKpiData/_computeInadData — invalida
 // automaticamente todo cache antigo (de qualquer unidade), sem precisar rodar clearCache().
-const CACHE_VERSION = 'v8';
+// v9: weekly da inadimplência passou a retornar { years: [{ano, points}] } em vez de y2025/y2026
+const CACHE_VERSION = 'v9';
+
+// ── Memoização de leituras de planilha (por execução) ─────────
+// SpreadsheetApp é o gargalo: cada getValues() de uma aba grande custa segundos.
+// Este memo garante que cada aba seja lida no máximo UMA vez por execução — essencial
+// em sendWeeklyEmails(), que computa KPI/Inad/NPS para 27 unidades + "todas" e, sem isso,
+// relia as mesmas abas ~28 vezes (risco real de estourar o limite de 6 min do Apps Script).
+// O objeto global zera a cada execução, então não há risco de dados velhos entre execuções.
+const _sheetDataMemo = {};
+function _getSheetData(ssId, sheetName) {
+  const key = ssId + '|' + sheetName;
+  if (!_sheetDataMemo[key]) {
+    _sheetDataMemo[key] = SpreadsheetApp.openById(ssId).getSheetByName(sheetName).getDataRange().getValues();
+  }
+  return _sheetDataMemo[key];
+}
 
 const NO_COBRAFIX = new Set(['BF','CH','DT','IP','IT','MR','NL','TQ','LJ','PC','PN']);
 const MEU_ACESSO  = 'boa semana'; // identificador na col H (ACESSOS) da aba SESSOES
@@ -340,8 +356,7 @@ function _computeKpiData(units) {
 // mat: coluna "Tipo de Registro" (E) = Matrícula | Matrícula Turma Fechada; data = "Data da matrícula" (H)
 // can: coluna "Tipo de Registro Saída" (T) = Cancelado, exceto motivo (F) = Término Book 10 | Acerto de sistema; data = "Data de Cancelamento" (U)
 function _loadMatCanIndexes(units, curYear, prevYear) {
-  const data = SpreadsheetApp.openById(PREENCHIMENTO_SHEET_ID)
-    .getSheetByName('Preenchimento').getDataRange().getValues();
+  const data = _getSheetData(PREENCHIMENTO_SHEET_ID, 'Preenchimento');
 
   const header = data[0].map(_norm);
   const cI = {
@@ -395,10 +410,9 @@ function _computeInadData(units) {
   const unitSet    = units ? new Set(units) : null;
   // cobraUnits: unidades que usam cobrafix; null=todas exceto NO_COBRAFIX; []=nenhuma (só NO_COBRAFIX solicitadas)
   const cobraUnits = units ? units.filter(u => !NO_COBRAFIX.has(u)) : null;
-  const ss = SpreadsheetApp.openById(INADIMPLENCIA_SHEET_ID);
 
   // 1. Totais gerais
-  const totalData = ss.getSheetByName('inad_total+cobrafix').getDataRange().getValues();
+  const totalData = _getSheetData(INADIMPLENCIA_SHEET_ID, 'inad_total+cobrafix');
   const totalH    = totalData[0].map(_norm);
   // Header real da aba (confirmado via debugInadTotal): Data Relatório, Unidade, Mês, Ano,
   // Títulos, Valor Previsto, Mês/Ano de vencimento — colunas simples, sem "Ajustada"
@@ -436,7 +450,7 @@ function _computeInadData(units) {
   const cobrafixByYear = {};
   const cobraSet = cobraUnits ? new Set(cobraUnits) : null;
   if (cobraUnits === null || cobraUnits.length > 0) {
-    const baixData = ss.getSheetByName('db_baixados_max').getDataRange().getValues();
+    const baixData = _getSheetData(INADIMPLENCIA_SHEET_ID, 'db_baixados_max');
     const baixH    = baixData[0].map(_norm);
     const bI = {
       unidadeAj: baixH.findIndex(h => h.includes('unidade') && h.includes('ajust')),
@@ -457,7 +471,7 @@ function _computeInadData(units) {
   }
 
   // 3. Inadpf por ano
-  const inadpfData = ss.getSheetByName('db_inadpf_max').getDataRange().getValues();
+  const inadpfData = _getSheetData(INADIMPLENCIA_SHEET_ID, 'db_inadpf_max');
   const inadH      = inadpfData[0].map(_norm);
   const iI = {
     unidadeAj:  inadH.findIndex(h => h.includes('unidade') && h.includes('ajust')),
@@ -504,8 +518,8 @@ function _computeInadData(units) {
   const recentYears = new Set([...Object.keys(fCobra).map(Number), ...Object.keys(fInad).map(Number)]);
   for (const yr of [...recentYears].sort()) yearCards[yr] = _buildYearCard(fCobra[yr]||null, fInad[yr]||null);
 
-  // 6. Séries semanais (2025 / 2026) — últimas 10 datas de relatório
-  const weekly = _computeInadWeekly(ss, unitSet);
+  // 6. Séries semanais (ano anterior / ano atual) — últimas 10 datas de relatório
+  const weekly = _computeInadWeekly(unitSet);
 
   return {
     total: {
@@ -521,9 +535,11 @@ function _computeInadData(units) {
 // ── Inadimplência semanal: soma db_inadimplência_pf + db_baixados por data de relatório ──
 // pf: col F = ano, col I = valor, col U = data do relatório, col V = unidade
 // baixados: ano tirado da col E (data da inadimplência), col H = valor, col J = data do relatório, col K = unidade
-// Mostra só as 10 datas de relatório mais recentes (mesmo eixo X pras duas séries de ano)
-function _computeInadWeekly(ss, unitSet) {
-  const YEARS = [2025, 2026];
+// Mostra só as 10 datas de relatório mais recentes (mesmo eixo X pras duas séries de ano).
+// Os anos são derivados da data atual (ano anterior + ano atual) — não precisa atualizar na virada do ano.
+function _computeInadWeekly(unitSet) {
+  const curYear = new Date().getFullYear();
+  const YEARS = [curYear - 1, curYear];
   const sums = {}; YEARS.forEach(y => sums[y] = {});
   const allDates = new Set();
 
@@ -535,7 +551,7 @@ function _computeInadWeekly(ss, unitSet) {
     allDates.add(key);
   }
 
-  const pfData = ss.getSheetByName('db_inadimplência_pf').getDataRange().getValues();
+  const pfData = _getSheetData(INADIMPLENCIA_SHEET_ID, 'db_inadimplência_pf');
   for (let i = 1; i < pfData.length; i++) {
     const r = pfData[i];
     const unit = _unitCode(r[21]); // V
@@ -543,7 +559,7 @@ function _computeInadWeekly(ss, unitSet) {
     addRow(parseInt(r[5]), r[20], parseFloat(r[8]) || 0); // F, U, I
   }
 
-  const baixData = ss.getSheetByName('db_baixados').getDataRange().getValues();
+  const baixData = _getSheetData(INADIMPLENCIA_SHEET_ID, 'db_baixados');
   for (let i = 1; i < baixData.length; i++) {
     const r = baixData[i];
     const unit = _unitCode(r[10]); // K
@@ -556,7 +572,7 @@ function _computeInadWeekly(ss, unitSet) {
   const last10 = [...allDates].sort().slice(-10);
   const series = ano => last10.map(key => ({ date: key, label: _dateLabel(key), valor: sums[ano][key] || 0 }));
 
-  return { labels: last10.map(_dateLabel), y2025: series(2025), y2026: series(2026) };
+  return { labels: last10.map(_dateLabel), years: YEARS.map(ano => ({ ano, points: series(ano) })) };
 }
 
 function _dateKey(raw) {
@@ -571,8 +587,7 @@ function _dateKey(raw) {
 // por data de relatório, em vez de somar os valores de Class Average — senão distorce a métrica.
 function _computeClassAverageWeekly(units) {
   const unitSet = units ? new Set(units) : null;
-  const data = SpreadsheetApp.openById(CLASS_AVERAGE_SHEET_ID)
-    .getSheetByName('NEW_Class_Average').getDataRange().getValues();
+  const data = _getSheetData(CLASS_AVERAGE_SHEET_ID, 'NEW_Class_Average');
 
   const header = data[0].map(_norm);
   const cI = {
@@ -612,8 +627,7 @@ function _computeClassAverageWeekly(units) {
 // Parceiro = soma(alunos em turmas fechadas/escolas-empresas) / soma(turmas fechadas/escolas-empresas)
 function _computeEstatisticaCards(units) {
   const unitSet = units ? new Set(units) : null;
-  const data = SpreadsheetApp.openById(ESTATISTICA_SHEET_ID)
-    .getSheetByName('Estatística').getDataRange().getValues();
+  const data = _getSheetData(ESTATISTICA_SHEET_ID, 'Estatística');
 
   const latest = {}; // sigla -> { row, ts }
   for (let i = 1; i < data.length; i++) {
@@ -664,11 +678,10 @@ function _computeEstatisticaCards(units) {
 // NPS = (%promotores [nota 9-10] − %detratores [nota 0-6]) × 100
 function _computeNpsData(units) {
   const unitSet = units ? new Set(units) : null;
-  const ss = SpreadsheetApp.openById(NPS_SHEET_ID);
 
-  const cakData  = ss.getSheetByName('C - A e K').getDataRange().getValues();
-  const nAllData = ss.getSheetByName('N - All').getDataRange().getValues();
-  const bolData  = ss.getSheetByName('C - BOL').getDataRange().getValues();
+  const cakData  = _getSheetData(NPS_SHEET_ID, 'C - A e K');
+  const nAllData = _getSheetData(NPS_SHEET_ID, 'N - All');
+  const bolData  = _getSheetData(NPS_SHEET_ID, 'C - BOL');
 
   const cakRows = cakData.slice(1).filter(r => {
     const unit = _unitCode(r[14]);
@@ -1098,29 +1111,41 @@ function debugPreenchimento() {
 }
 
 // ── Utilitários de cache ──────────────────────────────────────
+// Prefixos de todas as chaves de cache usadas pelos endpoints getXOnly
+const CACHE_PREFIXES = ['kpi_', 'inad_', 'classavg_', 'nps_'];
+
 // Limpa só as chaves ALL da versão atual. Pra invalidar cache de TODAS as unidades
 // de uma vez (ex.: depois de uma mudança grande), basta trocar CACHE_VERSION no topo do arquivo.
 function clearCache() {
   const cache = CacheService.getScriptCache();
-  cache.removeAll(['kpi_' + CACHE_VERSION + '_ALL', 'inad_' + CACHE_VERSION + '_ALL']);
+  cache.removeAll(CACHE_PREFIXES.map(p => p + CACHE_VERSION + '_ALL'));
   Logger.log('Cache limpo (versão ' + CACHE_VERSION + ').');
 }
 
 // ── Pré-aquecimento de cache ──────────────────────────────────
 // Gatilho recomendado: a cada 30 min (ScriptApp > Gatilhos)
+// Aquece os 4 datasets da visão "todas as unidades", nos MESMOS formatos que os
+// endpoints getKpiOnly/getInadOnly/getClassAverageOnly/getNpsOnly gravam e leem.
 function warmCache() {
   try {
-    const cache    = CacheService.getScriptCache();
-    const kpiData  = _computeKpiData(null);
-    const inadData = _computeInadData(null);
+    const cache = CacheService.getScriptCache();
+    const sizes = {};
+    const put = (prefix, payload) => {
+      try { cache.put(prefix + CACHE_VERSION + '_ALL', payload, 3600); } catch(e) {}
+      sizes[prefix] = payload.length;
+    };
 
-    const kpiResult  = JSON.stringify({ ok: true, kpi:  kpiData  });
-    const inadResult = JSON.stringify({ ok: true, inad: inadData });
+    put('kpi_',  JSON.stringify({ ok: true, kpi:  _computeKpiData(null) }));
+    put('inad_', JSON.stringify({ ok: true, inad: _computeInadData(null) }));
 
-    try { cache.put('kpi_'  + CACHE_VERSION + '_ALL', kpiResult,  3600); } catch(e) {}
-    try { cache.put('inad_' + CACHE_VERSION + '_ALL', inadResult, 3600); } catch(e) {}
+    const weekly = _computeClassAverageWeekly(null);
+    const cards  = _computeEstatisticaCards(null);
+    cards.atual  = weekly.points.length ? weekly.points[weekly.points.length - 1].valor : null;
+    put('classavg_', JSON.stringify({ ok: true, classAverage: { points: weekly.points, cards } }));
 
-    Logger.log('warmCache OK — kpi=' + kpiResult.length + ' bytes, inad=' + inadResult.length + ' bytes');
+    put('nps_', JSON.stringify({ ok: true, nps: _computeNpsData(null) }));
+
+    Logger.log('warmCache OK — ' + Object.keys(sizes).map(k => k + '=' + sizes[k] + ' bytes').join(', '));
   } catch(err) {
     Logger.log('warmCache ERRO: ' + err.message);
   }
@@ -1303,7 +1328,7 @@ function sendWeeklyEmails() {
       const html = _buildWeeklyEmailHtml([sigla], sigla, nome);
       MailApp.sendEmail({
         to:       dirs.map(d => d.email).join(','),
-        subject:  `Boa Semana — Resumo semanal (${sigla})`,
+        subject:  `Boa Semana - ${sigla}`,
         htmlBody: html,
       });
     } catch(e) { Logger.log('Erro ao enviar email da unidade ' + sigla + ': ' + e.message); }
@@ -1314,7 +1339,7 @@ function sendWeeklyEmails() {
     const html = _buildWeeklyEmailHtml(null, 'Todas as unidades', nome);
     MailApp.sendEmail({
       to:       EMAILS_TODAS_UNIDADES.map(d => d.email).join(','),
-      subject:  'Boa Semana — Resumo semanal (Todas as unidades)',
+      subject:  'Boa Semana - Todas as unidades',
       htmlBody: html,
     });
   } catch(e) { Logger.log('Erro ao enviar email de todas as unidades: ' + e.message); }
@@ -1342,7 +1367,7 @@ function testSendWeeklyEmail() {
 
   MailApp.sendEmail({
     to:       EMAIL_TESTE,
-    subject:  `[TESTE] Boa Semana — Resumo semanal (${label})`,
+    subject:  `[TESTE] Boa Semana - ${label}`,
     htmlBody: html,
   });
   Logger.log('Email de teste enviado para ' + EMAIL_TESTE + ' — unidade: ' + label);
@@ -1354,11 +1379,12 @@ function _dateBR(key) {
   return `${p[2]}/${p[1]}/${p[0]}`;
 }
 
+// Cores da barra do medidor de NPS no email (tema claro)
 function _npsColorHex(val) {
-  if (val === null || val === undefined) return '#5a8aba';
-  if (val >= 70) return '#4ade80';
-  if (val < 40)  return '#ef6370';
-  return '#eab308';
+  if (val === null || val === undefined) return '#94a3b8';
+  if (val >= 70) return '#16a34a';
+  if (val < 40)  return '#dc2626';
+  return '#f59e0b';
 }
 
 function _fmtIntEmail(n) { return Math.round(n||0).toLocaleString('pt-BR'); }
@@ -1368,16 +1394,16 @@ function _fmtPctEmail(n) { return (n === null || n === undefined) ? '—' : Numb
 // Uma métrica dentro do card de ano, igual ao ".year-metric" do painel
 function _yearMetricHtml(label, value, accent) {
   return `<td style="width:50%;text-align:center;padding:10px 6px;">
-    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#5a8aba;margin-bottom:2px;">${label}</div>
-    <div style="font-size:16px;font-weight:700;color:${accent ? '#ef6370' : '#ffffff'};">${value}</div>
+    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#4a617c;margin-bottom:2px;">${label}</div>
+    <div style="font-size:16px;font-weight:700;color:${accent ? '#dc2626' : '#0a1628'};">${value}</div>
   </td>`;
 }
 
 // Card "Inadimplência por Ano" de um ano específico, igual ao ".year-card" do painel
 function _yearCardEmailHtml(label, yc) {
-  if (!yc) return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2035;border:1px solid rgba(255,255,255,.07);border-radius:16px;">
-    <tr><td style="text-align:center;padding:10px 16px 8px;font-size:12px;font-weight:700;letter-spacing:.04em;color:#c0d4e9;background:rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.07);border-radius:15px 15px 0 0;">${label}</td></tr>
-    <tr><td style="text-align:center;padding:24px 16px;font-size:13px;color:#5a8aba;">Nenhum dado encontrado.</td></tr>
+  if (!yc) return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #d6e0ea;border-radius:16px;">
+    <tr><td style="text-align:center;padding:10px 16px 8px;font-size:12px;font-weight:700;letter-spacing:.04em;color:#1f3a5c;background:#eef3f8;border-bottom:1px solid #d6e0ea;border-radius:15px 15px 0 0;">${label}</td></tr>
+    <tr><td style="text-align:center;padding:24px 16px;font-size:13px;color:#64748b;">Nenhum dado encontrado.</td></tr>
   </table>`;
 
   const hasI = yc.inadpf   !== null;
@@ -1415,25 +1441,25 @@ function _yearCardEmailHtml(label, yc) {
     rows.push(`<tr>${_yearMetricHtml(a[0], a[1], a[2])}${b ? _yearMetricHtml(b[0], b[1], b[2]) : '<td style="width:50%;"></td>'}</tr>`);
   }
 
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2035;border:1px solid rgba(255,255,255,.07);border-radius:16px;">
-    <tr><td colspan="2" style="text-align:center;padding:10px 16px 8px;font-size:12px;font-weight:700;letter-spacing:.04em;color:#c0d4e9;background:rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.07);border-radius:15px 15px 0 0;">${label}</td></tr>
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #d6e0ea;border-radius:16px;">
+    <tr><td colspan="2" style="text-align:center;padding:10px 16px 8px;font-size:12px;font-weight:700;letter-spacing:.04em;color:#1f3a5c;background:#eef3f8;border-bottom:1px solid #d6e0ea;border-radius:15px 15px 0 0;">${label}</td></tr>
     ${rows.join('')}
   </table>`;
 }
 
 // Pílula de seção, igual ao ".section-title" do painel
 function _sectionTitleHtml(label) {
-  return `<div style="text-align:center;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#c0d4e9;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:10px 20px;">${label}</div>`;
+  return `<div style="text-align:center;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#1f3a5c;background:#eef3f8;border:1px solid #d6e0ea;border-radius:12px;padding:10px 20px;">${label}</div>`;
 }
 
 // Badge de variação %, igual ao ".kpi-card-badge" do painel (verde/vermelho conforme invert)
 function _pctBadgeHtml(pct, invert) {
   if (pct === null || pct === undefined) return '';
-  if (+pct === 0) return `<div style="display:inline-block;margin-top:6px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,.08);color:#89afd4;">0,0%</div>`;
+  if (+pct === 0) return `<div style="display:inline-block;margin-top:6px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;background:#e8eef4;color:#4a617c;">0,0%</div>`;
   const isUp   = pct > 0;
   const isGood = invert ? !isUp : isUp;
-  const bg     = isGood ? 'rgba(74,222,128,.15)' : 'rgba(239,99,112,.15)';
-  const color  = isGood ? '#4ade80' : '#ef6370';
+  const bg     = isGood ? 'rgba(22,163,74,.14)' : 'rgba(220,38,38,.12)';
+  const color  = isGood ? '#16a34a' : '#dc2626';
   const sign   = isUp ? '▲' : '▼';
   return `<div style="display:inline-block;margin-top:6px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;background:${bg};color:${color};">${sign} ${Math.abs(pct).toFixed(1).replace('.',',')}%</div>`;
 }
@@ -1449,26 +1475,26 @@ function _kpiGroupHtml(groupLabel, data, invert) {
     const val    = c.d ? c.d.val : 0;
     const pct    = c.d ? c.d.pct : null;
     const isNeg  = val < 0;
-    const border = i < cols.length - 1 ? 'border-right:1px solid rgba(255,255,255,.06);' : '';
+    const border = i < cols.length - 1 ? 'border-right:1px solid #e2e8f0;' : '';
     return `<td style="padding:16px 8px 18px;text-align:center;${border}">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#89afd4;margin-bottom:8px;">${c.period}</div>
-      <div style="font-size:22px;font-weight:700;letter-spacing:-.02em;color:${isNeg ? '#ef6370' : '#ffffff'};">${_fmtIntEmail(val)}</div>
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#4a617c;margin-bottom:8px;">${c.period}</div>
+      <div style="font-size:22px;font-weight:700;letter-spacing:-.02em;color:${isNeg ? '#dc2626' : '#0a1628'};">${_fmtIntEmail(val)}</div>
       ${_pctBadgeHtml(pct, invert)}
     </td>`;
   }).join('');
 
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2035;border:1px solid rgba(255,255,255,.07);border-radius:16px;">
-    <tr><td colspan="3" style="text-align:center;padding:11px 16px 9px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#c0d4e9;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.07);border-radius:15px 15px 0 0;">${groupLabel}</td></tr>
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #d6e0ea;border-radius:16px;">
+    <tr><td colspan="3" style="text-align:center;padding:11px 16px 9px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#1f3a5c;background:#eef3f8;border-bottom:1px solid #d6e0ea;border-radius:15px 15px 0 0;">${groupLabel}</td></tr>
     <tr>${tds}</tr>
   </table>`;
 }
 
 // Card único, igual ao ".inad-kpi" do painel
 function _statCardHtml(label, value) {
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2035;border:1px solid rgba(255,255,255,.07);border-radius:16px;">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #d6e0ea;border-radius:16px;">
     <tr><td style="padding:18px 20px;text-align:center;">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#89afd4;margin-bottom:8px;">${label}</div>
-      <div style="font-size:22px;font-weight:700;letter-spacing:-.02em;color:#ffffff;">${value}</div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#4a617c;margin-bottom:8px;">${label}</div>
+      <div style="font-size:22px;font-weight:700;letter-spacing:-.02em;color:#0a1628;">${value}</div>
     </td></tr>
   </table>`;
 }
@@ -1481,7 +1507,7 @@ function _npsMeterHtml(label, data) {
 
   let barHtml;
   if (val === null) {
-    barHtml = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="background:rgba(255,255,255,.08);border-radius:4px;height:8px;line-height:8px;font-size:0;">&nbsp;</td></tr></table>`;
+    barHtml = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="background:#e2e8f0;border-radius:4px;height:8px;line-height:8px;font-size:0;">&nbsp;</td></tr></table>`;
   } else {
     const clamped   = Math.max(-100, Math.min(100, val));
     const pct       = (clamped + 100) / 200 * 100;
@@ -1489,7 +1515,7 @@ function _npsMeterHtml(label, data) {
     const leftPct   = clamped >= 0 ? 50 : pct;
     const widthPct  = Math.abs(pct - 50);
     const rightPct  = 100 - leftPct - widthPct;
-    const track     = 'background:rgba(255,255,255,.08);height:8px;line-height:8px;font-size:0;';
+    const track     = 'background:#e2e8f0;height:8px;line-height:8px;font-size:0;';
     barHtml = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
       ${leftPct  > 0.5 ? `<td width="${leftPct}%"  style="${track}">&nbsp;</td>` : ''}
       ${widthPct > 0.5 ? `<td width="${widthPct}%" style="background:${color};height:8px;line-height:8px;font-size:0;">&nbsp;</td>` : ''}
@@ -1498,17 +1524,17 @@ function _npsMeterHtml(label, data) {
   }
 
   const subLabel = (!data || !data.total) ? 'sem respostas' : `${data.total} resposta${data.total === 1 ? '' : 's'}`;
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f2035;border:1px solid rgba(255,255,255,.07);border-radius:16px;">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #d6e0ea;border-radius:16px;">
     <tr><td style="padding:18px 18px 16px;text-align:center;">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#89afd4;margin-bottom:8px;">${label}</div>
-      <div style="font-size:24px;font-weight:700;letter-spacing:-.02em;color:#ffffff;margin-bottom:12px;">${valLabel}</div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#4a617c;margin-bottom:8px;">${label}</div>
+      <div style="font-size:24px;font-weight:700;letter-spacing:-.02em;color:#0a1628;margin-bottom:12px;">${valLabel}</div>
       ${barHtml}
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:6px;"><tr>
-        <td style="font-size:10px;color:#5a8aba;text-align:left;">-100</td>
-        <td style="font-size:10px;color:#5a8aba;text-align:center;">0</td>
-        <td style="font-size:10px;color:#5a8aba;text-align:right;">100</td>
+        <td style="font-size:10px;color:#64748b;text-align:left;">-100</td>
+        <td style="font-size:10px;color:#64748b;text-align:center;">0</td>
+        <td style="font-size:10px;color:#64748b;text-align:right;">100</td>
       </tr></table>
-      <div style="font-size:11px;color:#5a8aba;margin-top:8px;">${subLabel}</div>
+      <div style="font-size:11px;color:#64748b;margin-top:8px;">${subLabel}</div>
     </td></tr>
   </table>`;
 }
@@ -1525,6 +1551,131 @@ function _npsMetersGridHtml(cards) {
     </tr>`);
   }
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows.join('')}</table>`;
+}
+
+// ── Ranking de inadimplência por unidade ──────────────────────
+// Mesma lógica da "Inadimplência Total": para cada unidade, considera só as linhas da
+// data de relatório mais recente daquela unidade (aba inad_total+cobrafix), e ordena
+// do maior para o menor valor previsto. Usado apenas no email "todas as unidades".
+function _computeInadRanking() {
+  const totalData = _getSheetData(INADIMPLENCIA_SHEET_ID, 'inad_total+cobrafix');
+  const totalH    = totalData[0].map(_norm);
+  const tI = {
+    unidade:   totalH.findIndex(h => h === 'unidade'),
+    titulos:   totalH.findIndex(h => h === 'titulos'),
+    valorPrev: totalH.findIndex(h => h.includes('valor') && h.includes('previsto')),
+    dataRel:   totalH.findIndex(h => h.includes('data') && h.includes('relat')),
+  };
+  const _totalUnit = raw => _sigla(raw) || _unitCode(raw);
+
+  const latestDate = {};
+  for (let i = 1; i < totalData.length; i++) {
+    const unit = _totalUnit(totalData[i][tI.unidade]);
+    if (!unit) continue;
+    const d = totalData[i][tI.dataRel] instanceof Date
+      ? totalData[i][tI.dataRel] : new Date(totalData[i][tI.dataRel]);
+    if (isNaN(d.getTime())) continue;
+    if (!latestDate[unit] || d > latestDate[unit]) latestDate[unit] = d;
+  }
+
+  const byUnit = {};
+  for (let i = 1; i < totalData.length; i++) {
+    const unit = _totalUnit(totalData[i][tI.unidade]);
+    if (!unit || !latestDate[unit]) continue;
+    const d = totalData[i][tI.dataRel] instanceof Date
+      ? totalData[i][tI.dataRel] : new Date(totalData[i][tI.dataRel]);
+    if (isNaN(d.getTime()) || d.getTime() !== latestDate[unit].getTime()) continue;
+    if (!byUnit[unit]) byUnit[unit] = { titulos: 0, valor: 0 };
+    byUnit[unit].titulos += parseFloat(totalData[i][tI.titulos])   || 0;
+    byUnit[unit].valor   += parseFloat(totalData[i][tI.valorPrev]) || 0;
+  }
+
+  return Object.keys(byUnit)
+    .map(unidade => ({ unidade, valor: byUnit[unidade].valor, titulos: Math.round(byUnit[unidade].titulos) }))
+    .sort((a, b) => b.valor - a.valor);
+}
+
+// Escapa conteúdo vindo das planilhas (nomes, motivos, críticas) antes de inserir no HTML do email
+function _escEmail(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Tabela de ranking de inadimplência por unidade (maior → menor valor previsto).
+// As 3 maiores inadimplências ficam em vermelho; linha final com o total geral.
+function _inadRankingEmailHtml(ranking) {
+  if (!ranking || !ranking.length) {
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #d6e0ea;border-radius:16px;">
+      <tr><td style="text-align:center;padding:20px;font-size:12px;color:#64748b;">Nenhum dado encontrado.</td></tr>
+    </table>`;
+  }
+
+  const th = (label, align) => `<th style="padding:9px 10px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#4a617c;background:#eef3f8;border-bottom:1px solid #d6e0ea;text-align:${align || 'left'};">${label}</th>`;
+
+  const body = ranking.map((r, i) => {
+    const top3      = i < 3;
+    const valColor  = top3 ? '#dc2626' : '#0a1628';
+    const rowBg     = top3 ? 'background:rgba(220,38,38,.04);' : '';
+    return `<tr>
+      <td style="padding:9px 10px;font-size:12px;font-weight:700;color:${top3 ? '#dc2626' : '#64748b'};border-bottom:1px solid #e2e8f0;${rowBg}">${i + 1}º</td>
+      <td style="padding:9px 10px;font-size:12px;font-weight:700;color:#1f3a5c;border-bottom:1px solid #e2e8f0;${rowBg}">${_escEmail(r.unidade)}</td>
+      <td style="padding:9px 10px;font-size:12px;font-weight:700;color:${valColor};border-bottom:1px solid #e2e8f0;text-align:right;${rowBg}">${_fmtBRLEmail(r.valor)}</td>
+      <td style="padding:9px 10px;font-size:12px;color:#1f3a5c;border-bottom:1px solid #e2e8f0;text-align:right;${rowBg}">${_fmtIntEmail(r.titulos)}</td>
+    </tr>`;
+  }).join('');
+
+  const totalValor   = ranking.reduce((s, r) => s + r.valor, 0);
+  const totalTitulos = ranking.reduce((s, r) => s + r.titulos, 0);
+  const totalRow = `<tr>
+    <td colspan="2" style="padding:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#4a617c;background:#eef3f8;">Total</td>
+    <td style="padding:10px;font-size:12px;font-weight:700;color:#0a1628;background:#eef3f8;text-align:right;">${_fmtBRLEmail(totalValor)}</td>
+    <td style="padding:10px;font-size:12px;font-weight:700;color:#0a1628;background:#eef3f8;text-align:right;">${_fmtIntEmail(totalTitulos)}</td>
+  </tr>`;
+
+  return `<table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #d6e0ea;border-radius:16px;border-collapse:separate;">
+    <tr>${th('#')}${th('Unidade')}${th('Valor Previsto', 'right')}${th('Títulos', 'right')}</tr>
+    ${body}
+    ${totalRow}
+  </table>`;
+}
+
+// Tabela de respostas recentes do NPS (últimos 15 dias), igual à ".nps-table" do painel.
+// Assim como no painel, mostra as respostas de TODAS as unidades (sem filtro).
+function _npsTableEmailHtml(rows) {
+  if (!rows || !rows.length) {
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #d6e0ea;border-radius:16px;">
+      <tr><td style="text-align:center;padding:20px;font-size:12px;color:#64748b;">Sem respostas nos últimos 15 dias.</td></tr>
+    </table>`;
+  }
+
+  const MAX_LINHAS = 30; // evita emails gigantes (Gmail corta mensagens acima de ~102KB)
+  const shown = rows.slice(0, MAX_LINHAS);
+
+  const th = label => `<th style="padding:8px 6px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#4a617c;background:#eef3f8;border-bottom:1px solid #d6e0ea;text-align:left;">${label}</th>`;
+  const td = (content, extra) => `<td style="padding:8px 6px;font-size:11px;color:#1f3a5c;border-bottom:1px solid #e2e8f0;vertical-align:top;${extra || ''}">${content}</td>`;
+
+  const body = shown.map(r => {
+    const notaColor = r.nota === null ? '#64748b' : (r.nota >= 9 ? '#16a34a' : (r.nota <= 6 ? '#dc2626' : '#1f3a5c'));
+    return `<tr>
+      ${td(_escEmail(r.unidade))}
+      ${td(_dateBR(r.data), 'white-space:nowrap;')}
+      ${td(_escEmail(r.nome))}
+      ${td(_escEmail(r.book))}
+      ${td(r.nota === null ? '—' : r.nota, `font-weight:700;color:${notaColor};`)}
+      ${td(_escEmail(r.motivo))}
+      ${td(_escEmail(r.criticas))}
+    </tr>`;
+  }).join('');
+
+  const more = rows.length > MAX_LINHAS
+    ? `<tr><td colspan="7" style="text-align:center;padding:10px;font-size:11px;color:#64748b;">+ ${rows.length - MAX_LINHAS} resposta(s) — veja todas no painel completo</td></tr>`
+    : '';
+
+  return `<table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #d6e0ea;border-radius:16px;border-collapse:separate;">
+    <tr>${th('Unidade')}${th('Data')}${th('Nome')}${th('Book')}${th('Nota')}${th('Motivo do Cancelamento')}${th('Críticas, Sugestões e Elogios')}</tr>
+    ${body}
+    ${more}
+  </table>`;
 }
 
 function _buildWeeklyEmailHtml(units, unidadeLabel, nomeDiretor) {
@@ -1549,15 +1700,20 @@ function _buildWeeklyEmailHtml(units, unidadeLabel, nomeDiretor) {
   const anoAtual   = String(new Date().getFullYear());
   const yearCardAno = _yearCardEmailHtml(anoAtual, inad.yearCards[anoAtual] || null);
 
+  // Ranking por unidade: só para quem recebe a visão de todas as unidades (units === null)
+  const rankingHtml = units === null ? `
+    <tr><td style="padding-bottom:14px;">${_sectionTitleHtml('Ranking de Inadimplência por Unidade')}</td></tr>
+    <tr><td style="padding-bottom:22px;">${_inadRankingEmailHtml(_computeInadRanking())}</td></tr>` : '';
+
   return `
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a1628;padding:32px 0;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;padding:32px 0;">
   <tr><td align="center">
   <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;font-family:Arial,Helvetica,sans-serif;">
 
     <tr><td style="text-align:center;padding-bottom:24px;">
-      <div style="font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-.02em;">Boa semana${nomeDiretor ? ', ' + nomeDiretor : ''}!</div>
-      <div style="font-size:12px;color:#89afd4;font-style:italic;margin-top:4px;">BRASAS English Course</div>
-      <div style="font-size:13px;color:#c0d4e9;margin-top:14px;">Unidade: <strong style="color:#ffffff;">${unidadeLabel}</strong> &middot; ${Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'dd/MM/yyyy')}</div>
+      <div style="font-size:22px;font-weight:700;color:#0a1628;letter-spacing:-.02em;">Boa semana${nomeDiretor ? ', ' + nomeDiretor : ''}!</div>
+      <div style="font-size:12px;color:#4a617c;font-style:italic;margin-top:4px;">BRASAS English Course</div>
+      <div style="font-size:13px;color:#4a617c;margin-top:14px;">Unidade: <strong style="color:#0a1628;">${unidadeLabel}</strong> &middot; ${Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'dd/MM/yyyy')}</div>
     </td></tr>
 
     <tr><td style="padding-bottom:14px;">${_sectionTitleHtml('Matrículas')}</td></tr>
@@ -1573,14 +1729,18 @@ function _buildWeeklyEmailHtml(units, unidadeLabel, nomeDiretor) {
     <tr><td style="padding-bottom:22px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${inadCardsHtml}</table></td></tr>
 
     <tr><td style="padding-bottom:14px;">${_sectionTitleHtml('Inadimplência ' + anoAtual)}</td></tr>
-    <tr><td style="padding-bottom:10px;">${yearCardAno}</td></tr>
+    <tr><td style="padding-bottom:22px;">${yearCardAno}</td></tr>
+    ${rankingHtml}
 
     <tr><td style="padding-bottom:14px;padding-top:12px;">${_sectionTitleHtml('NPS')}</td></tr>
     <tr><td style="padding-bottom:6px;">${_npsMetersGridHtml(npsCards)}</td></tr>
-    ${nps.lastResponse ? `<tr><td style="text-align:center;font-size:12px;color:#5a8aba;padding-bottom:20px;">Última resposta: ${_dateBR(nps.lastResponse)}</td></tr>` : ''}
+    ${nps.lastResponse ? `<tr><td style="text-align:center;font-size:12px;color:#64748b;padding-bottom:20px;">Última resposta: ${_dateBR(nps.lastResponse)}</td></tr>` : ''}
+
+    <tr><td style="padding-bottom:14px;padding-top:4px;">${_sectionTitleHtml('Respostas recentes do NPS — últimos 15 dias')}</td></tr>
+    <tr><td style="padding-bottom:22px;">${_npsTableEmailHtml(nps.recent)}</td></tr>
 
     <tr><td style="text-align:center;padding-top:8px;">
-      <a href="${HUB_URL}" style="display:inline-block;background:#2a4d76;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;">Abrir o painel completo →</a>
+      <a href="${HUB_URL}" style="display:inline-block;background:#1e3a5f;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;">Abrir o painel completo →</a>
     </td></tr>
 
   </table>
