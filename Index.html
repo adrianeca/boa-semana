@@ -418,8 +418,11 @@ function _renderClassAverage(data) {
     return;
   }
   grid.innerHTML = '<div class="weekly-card"><canvas class="weekly-chart" id="classAvgChart"></canvas></div>';
-  drawBarChart(document.getElementById('classAvgChart'), data.points, {
-    color: 'rgba(90,138,186,.8)',
+  // Linha com eixo ampliado (em vez de barras): a variação semanal do Class Average é
+  // pequena demais para aparecer em barras que partem do zero — e barra com eixo
+  // truncado engana o leitor; linha com eixo ajustado ao intervalo dos dados não.
+  drawLineChart(document.getElementById('classAvgChart'), data.points, {
+    color: 'rgba(90,138,186,.9)',
     formatValue: fmtClassAvg,
   });
 }
@@ -438,7 +441,7 @@ function _renderNps(d) {
   const meters = [
     showAdultsKids && { label: 'Adults',           data: d && d.adults },
     showAdultsKids && { label: 'Kids',              data: d && d.kids },
-    showCancelados && { label: 'Cancelados',        data: d && d.cancelados },
+    showCancelados && { label: 'Cancelados BOL',    data: d && d.cancelados },
     { label: 'Mudança de Nível',  data: d && d.mudancaNivel },
   ].filter(Boolean);
   const metersEl = document.getElementById('npsMeters');
@@ -509,7 +512,7 @@ function _renderKpi(d) {
   const groups = [
     { key: 'matriculas', label: 'Matrículas', data: d.matriculas, spark: d.sparkline, sk: 'mat' },
     { key: 'cancelados', label: 'Cancelados',  data: d.cancelados, spark: d.sparkline, sk: 'can', invert: true },
-    { key: 'saldo',      label: 'Saldo',        data: d.saldo,      spark: null },
+    { key: 'saldo',      label: 'Saldo',        data: d.saldo,      spark: d.sparkline, sk: 'sal' },
   ];
 
   const row = document.getElementById('kpiRow');
@@ -694,16 +697,95 @@ function drawBarChart(canvas, points, opts) {
   });
 }
 
+// ── Gráfico de linha com eixo Y ajustado ao intervalo dos dados ──
+// Usado no Class Average: os valores variam pouco (ex.: 10,20 a 10,33) e, em barras
+// a partir do zero, ficam todos com a mesma altura. A linha "dá zoom" no intervalo
+// real (com folga acima/abaixo), deixando a tendência visível.
+function drawLineChart(canvas, points, opts) {
+  const color       = (opts && opts.color) || 'rgba(90,138,186,.9)';
+  const formatValue = (opts && opts.formatValue) || fmtClassAvg;
+
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 300, h = canvas.clientHeight || 220;
+  canvas.width  = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const padTop = 26, padBottom = 30, padSide = 26;
+  const plotW = w - padSide * 2, plotH = h - padTop - padBottom;
+
+  const vals = points.map(p => p.valor);
+  let min = Math.min(...vals), max = Math.max(...vals);
+  // Folga de ~35% do intervalo acima e abaixo; se todos os valores forem iguais,
+  // usa uma folga mínima para a linha não colar nas bordas
+  const folga = (max - min) * 0.35 || Math.max(Math.abs(max) * 0.02, 0.1);
+  min -= folga; max += folga;
+  const range = max - min;
+
+  const xy = points.map((p, i) => ({
+    x: padSide + (points.length === 1 ? plotW / 2 : (i / (points.length - 1)) * plotW),
+    y: padTop + plotH - ((p.valor - min) / range) * plotH,
+  }));
+
+  // Linhas de grade horizontais discretas, só para dar referência de altura
+  ctx.strokeStyle = 'rgba(255,255,255,.06)';
+  ctx.lineWidth = 1;
+  for (let g = 0; g <= 3; g++) {
+    const gy = padTop + (plotH / 3) * g;
+    ctx.beginPath(); ctx.moveTo(padSide, gy); ctx.lineTo(w - padSide, gy); ctx.stroke();
+  }
+
+  // Área sob a linha
+  const grad = ctx.createLinearGradient(0, padTop, 0, padTop + plotH);
+  grad.addColorStop(0, 'rgba(90,138,186,.22)');
+  grad.addColorStop(1, 'rgba(90,138,186,0)');
+  ctx.beginPath();
+  ctx.moveTo(xy[0].x, padTop + plotH);
+  xy.forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.lineTo(xy[xy.length - 1].x, padTop + plotH);
+  ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+
+  // Linha
+  ctx.beginPath();
+  xy.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.strokeStyle = color; ctx.lineWidth = 2;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // Pontos, valores e datas
+  xy.forEach((p, i) => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#5a8aba'; ctx.fill();
+    ctx.strokeStyle = '#0f2035'; ctx.lineWidth = 2; ctx.stroke();
+
+    ctx.fillStyle = '#c0d4e9';
+    ctx.font = '600 10px "DM Sans", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(formatValue(points[i].valor), p.x, Math.max(10, p.y - 10));
+
+    ctx.fillStyle = '#5a8aba';
+    ctx.font = '500 10px "DM Sans", sans-serif';
+    ctx.fillText(points[i].label, p.x, h - padBottom + 16);
+  });
+}
+
 // ── Sparkline ─────────────────────────────────────────────────
 function drawSparkline(canvas, data, key) {
-  const vals = data.map(d => d[key]);
-  const max  = Math.max(...vals, 1);
+  // 'sal' é derivado: saldo do mês = matrículas - cancelados (pode ser negativo)
+  const vals = data.map(d => key === 'sal' ? (d.mat || 0) - (d.can || 0) : d[key]);
+  const max   = Math.max(...vals, 1);
+  const min   = Math.min(...vals, 0); // baseline no zero; desce se houver saldo negativo
+  const range = (max - min) || 1;
   const w = canvas.offsetWidth || 100, h = canvas.offsetHeight || 32;
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d');
   const pts = vals.map((v, i) => ({
     x: (i / (vals.length - 1)) * (w - 4) + 2,
-    y: h - 4 - (v / max) * (h - 8),
+    y: h - 4 - ((v - min) / range) * (h - 8),
   }));
   // Azul neutro (não vermelho) — é só tendência, não indica bom/ruim
   const grad = ctx.createLinearGradient(0, 0, 0, h);

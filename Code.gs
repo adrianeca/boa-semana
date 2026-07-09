@@ -14,7 +14,8 @@ const NPS_SHEET_ID           = '1JImJD3_KxbOYZ0g7b7ibCau9dMw7g__LrC4cXlqhnnU';
 // Bump isto a cada mudança na lógica de _computeKpiData/_computeInadData — invalida
 // automaticamente todo cache antigo (de qualquer unidade), sem precisar rodar clearCache().
 // v9: weekly da inadimplência passou a retornar { years: [{ano, points}] } em vez de y2025/y2026
-const CACHE_VERSION = 'v9';
+// v10: respostas da BOL na tabela do NPS só aparecem para BOL e acesso total
+const CACHE_VERSION = 'v10';
 
 // ── Memoização de leituras de planilha (por execução) ─────────
 // SpreadsheetApp é o gargalo: cada getValues() de uma aba grande custa segundos.
@@ -718,13 +719,15 @@ function _computeNpsData(units) {
     if (!isNaN(d.getTime()) && (!lastResponse || d > lastResponse)) lastResponse = d;
   });
 
-  // Tabela de respostas recentes — SEM filtro de unidade (todos veem de todos), últimos 15 dias
+  // Tabela de respostas recentes — últimos 15 dias. Todos veem as respostas de todas as
+  // unidades, EXCETO as da BOL: comentários da BOL só aparecem para a própria BOL e para
+  // quem tem acesso a todas as unidades (bolApplicable).
   // C - A e K usa o Carimbo (col 0); C - BOL usa a Data Resposta (col 10, única data confiável na aba)
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 15);
   const recentRaw = [
     ...cakData.slice(1).map(r => ({ r, d: r[0]  instanceof Date ? r[0]  : new Date(r[0]),  src: 'cak' })),
-    ...bolData.slice(1).map(r => ({ r, d: r[10] instanceof Date ? r[10] : new Date(r[10]), src: 'bol' })),
+    ...(bolApplicable ? bolData.slice(1).map(r => ({ r, d: r[10] instanceof Date ? r[10] : new Date(r[10]), src: 'bol' })) : []),
   ];
   const recent = recentRaw
     .filter(({ d }) => !isNaN(d.getTime()) && d >= cutoff)
@@ -745,7 +748,10 @@ function _computeNpsData(units) {
       nota:     r[9] === '' || r[9] === null || r[9] === undefined ? null : parseFloat(r[9]),
       motivo:   String(r[7]||''),
       criticas: String(r[10]||''),
-    }));
+    }))
+    // Garantia extra: se alguma linha da C - A e K vier marcada como BOL/Online,
+    // ela também fica restrita a quem pode ver a BOL
+    .filter(row => bolApplicable || row.unidade !== 'BOL');
 
   return {
     adults, kids, mudancaNivel: nivel, cancelados,
@@ -1334,13 +1340,19 @@ function sendWeeklyEmails() {
     } catch(e) { Logger.log('Erro ao enviar email da unidade ' + sigla + ': ' + e.message); }
   });
 
+  // Visão de todas as unidades: um email individual para cada destinatário, com o nome
+  // no assunto e na saudação. O corpo é montado uma vez só (com um placeholder no lugar
+  // do nome) para não recomputar KPI/Inad/NPS três vezes.
   try {
-    const nome = _joinNames(EMAILS_TODAS_UNIDADES.map(d => d.nome));
-    const html = _buildWeeklyEmailHtml(null, 'Todas as unidades', nome);
-    MailApp.sendEmail({
-      to:       EMAILS_TODAS_UNIDADES.map(d => d.email).join(','),
-      subject:  'Boa Semana - Todas as unidades',
-      htmlBody: html,
+    const htmlTemplate = _buildWeeklyEmailHtml(null, 'Todas as unidades', '__NOME__');
+    EMAILS_TODAS_UNIDADES.forEach(dest => {
+      try {
+        MailApp.sendEmail({
+          to:       dest.email,
+          subject:  `Boa Semana - ${dest.nome}`,
+          htmlBody: htmlTemplate.replace('__NOME__', dest.nome),
+        });
+      } catch(e) { Logger.log('Erro ao enviar email de todas as unidades para ' + dest.email + ': ' + e.message); }
     });
   } catch(e) { Logger.log('Erro ao enviar email de todas as unidades: ' + e.message); }
 }
@@ -1360,14 +1372,17 @@ function testSendWeeklyEmail() {
 
   const units = isAll ? null : [sigla];
   const label = isAll ? 'Todas as unidades' : sigla;
+  // No modo ALL o envio real é individual (um email por destinatário, nome no assunto);
+  // o teste usa o nome de quem bater com EMAIL_TESTE, senão o do primeiro da lista
+  const destAll = EMAILS_TODAS_UNIDADES.find(d => d.email === EMAIL_TESTE) || EMAILS_TODAS_UNIDADES[0];
   const nome  = isAll
-    ? _joinNames(EMAILS_TODAS_UNIDADES.map(d => d.nome))
+    ? destAll.nome
     : _joinNames(DIRETORES_UNIDADE[sigla].map(d => d.nome));
   const html  = _buildWeeklyEmailHtml(units, label, nome);
 
   MailApp.sendEmail({
     to:       EMAIL_TESTE,
-    subject:  `[TESTE] Boa Semana - ${label}`,
+    subject:  isAll ? `[TESTE] Boa Semana - ${nome}` : `[TESTE] Boa Semana - ${label}`,
     htmlBody: html,
   });
   Logger.log('Email de teste enviado para ' + EMAIL_TESTE + ' — unidade: ' + label);
@@ -1688,7 +1703,7 @@ function _buildWeeklyEmailHtml(units, unidadeLabel, nomeDiretor) {
     npsCards.push({ label: 'Adults', data: nps.adults });
     npsCards.push({ label: 'Kids',   data: nps.kids });
   }
-  if (nps.showCancelados) npsCards.push({ label: 'Cancelados', data: nps.cancelados });
+  if (nps.showCancelados) npsCards.push({ label: 'Cancelados BOL', data: nps.cancelados });
   npsCards.push({ label: 'Mudança de Nível', data: nps.mudancaNivel });
 
   const inadCardsHtml = [
