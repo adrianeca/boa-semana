@@ -1169,7 +1169,7 @@ function _redirectToHub() {
     </head><body>
       <div style="text-align:center">
         <p>Redirecionando para autenticação…</p>
-        <a href="${target}" style="color:#fff">Clique aqui se não for redirecionado</a>
+        <a href="${target}" target="_top" style="color:#fff">Clique aqui se não for redirecionado</a>
       </div>
       <script>try{window.top.location.replace('${target}');}catch(e){window.location.replace('${target}');}<\/script>
     </body></html>`
