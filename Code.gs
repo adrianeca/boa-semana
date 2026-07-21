@@ -34,6 +34,17 @@ function _getSheetData(ssId, sheetName) {
 
 const NO_COBRAFIX = new Set(['BF','CH','DT','IP','IT','MR','NL','TQ','LJ','PC','PN']);
 const MEU_ACESSO  = 'boa semana'; // identificador na col H (ACESSOS) da aba SESSOES
+
+// Sócios com acesso a todas as unidades no Hub (col E vazia), mas restritos a
+// UMA única unidade especificamente no Boa Semana — ver uso em _authAndAccess().
+const RESTRICAO_UNICA_UNIDADE = {
+  'bianca_dp@brasas.com':    'NT',
+  'amanda.cunha@brasas.com': 'NT',
+  'bill@brasas.com':         'RC',
+  'summer@brasas.com':       'NT',
+  'karla.correa@brasas.com': 'NT',
+  'tatiana.cordeiro@brasas.com': 'NI',
+};
 const ALL_UNITS   = ['BF','BG','BOL','CG','CH','CP','CX','DT','FG','GR','IG','IP','IT','LJ','MR','NI','NL','NT','PC','PN','PO','RC','TJ','TQ','VO','VP','VQ'];
 
 const _norm = s => String(s||'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
@@ -245,18 +256,14 @@ function _authAndAccess(token) {
 
       // Col E (índice 4) = UNIDADE, separado por pipe; vazio = acesso a todas
       const unidadeRaw  = String(data[i][4]||'').trim();
-      const unidades    = unidadeRaw
+      let   unidades    = unidadeRaw
         ? unidadeRaw.split('|').map(u => _unitCode(u)).filter(Boolean)
         : null; // null = acesso a todas as unidades
 
-      // TODO(pendência): alguns usuários têm acesso a todas as unidades em outros
-      // painéis (col E vazia no Hub → unidades=null aqui), mas precisam ser restritos
-      // a UMA única unidade especificamente neste painel. Não mudar a col E do Hub
-      // (é compartilhada com outros painéis) — em vez disso, sobrescrever `unidades`
-      // aqui com um mapa email->sigla, ex.:
-      //   const RESTRICAO_UNICA_UNIDADE = { 'fulano@brasas.com': 'IP' };
-      //   if (RESTRICAO_UNICA_UNIDADE[email]) unidades = [RESTRICAO_UNICA_UNIDADE[email]];
-      // Aguardando lista de emails + unidade para implementar.
+      // Sócios com acesso a todas as unidades em outros painéis (col E vazia no Hub),
+      // mas restritos a UMA única unidade aqui no Boa Semana. Não mudar a col E do
+      // Hub (é compartilhada com outros painéis) — sobrescreve `unidades` só aqui.
+      if (RESTRICAO_UNICA_UNIDADE[email]) unidades = [RESTRICAO_UNICA_UNIDADE[email]];
 
       const result = {
         access: {
