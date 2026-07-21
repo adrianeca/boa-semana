@@ -1280,7 +1280,7 @@ const DIRETORES_UNIDADE = {
   NI:  [{ email: 'dirni@brasas.com',     nome: 'Clay' }],
   NL:  [{ email: 'dirnl@brasas.com',     nome: 'Kat' }],
   NT:  [{ email: 'dirnt@brasas.com',     nome: 'Kay' }],
-  PC:  [{ email: 'dirpc@brasas.com',     nome: 'Ashley' }],
+  PC:  [{ email: 'dirpc@brasas.com',     nome: 'Nelson' }],
   PN:  [{ email: 'dirpn@brasas.com',     nome: 'Ashley' }],
   PO:  [{ email: 'dirpo@brasas.com',     nome: 'James' }],
   RC:  [{ email: 'dirrc@brasas.com',     nome: 'Emerson' }],
@@ -1345,6 +1345,7 @@ function sendWeeklyEmails() {
         to:       dirs.map(d => d.email).join(','),
         subject:  `Boa Semana - ${sigla}`,
         htmlBody: html,
+        name:     'BRASAS English Course',
       });
     } catch(e) { Logger.log('Erro ao enviar email da unidade ' + sigla + ': ' + e.message); }
   });
@@ -1360,6 +1361,7 @@ function sendWeeklyEmails() {
           to:       dest.email,
           subject:  `Boa Semana - ${dest.nome}`,
           htmlBody: htmlTemplate.replace('__NOME__', dest.nome),
+          name:     'BRASAS English Course',
         });
       } catch(e) { Logger.log('Erro ao enviar email de todas as unidades para ' + dest.email + ': ' + e.message); }
     });
@@ -1393,6 +1395,7 @@ function testSendWeeklyEmail() {
     to:       EMAIL_TESTE,
     subject:  isAll ? `[TESTE] Boa Semana - ${nome}` : `[TESTE] Boa Semana - ${label}`,
     htmlBody: html,
+    name:     'BRASAS English Course',
   });
   Logger.log('Email de teste enviado para ' + EMAIL_TESTE + ' — unidade: ' + label);
 }
