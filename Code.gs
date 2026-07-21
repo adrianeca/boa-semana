@@ -249,6 +249,15 @@ function _authAndAccess(token) {
         ? unidadeRaw.split('|').map(u => _unitCode(u)).filter(Boolean)
         : null; // null = acesso a todas as unidades
 
+      // TODO(pendência): alguns usuários têm acesso a todas as unidades em outros
+      // painéis (col E vazia no Hub → unidades=null aqui), mas precisam ser restritos
+      // a UMA única unidade especificamente neste painel. Não mudar a col E do Hub
+      // (é compartilhada com outros painéis) — em vez disso, sobrescrever `unidades`
+      // aqui com um mapa email->sigla, ex.:
+      //   const RESTRICAO_UNICA_UNIDADE = { 'fulano@brasas.com': 'IP' };
+      //   if (RESTRICAO_UNICA_UNIDADE[email]) unidades = [RESTRICAO_UNICA_UNIDADE[email]];
+      // Aguardando lista de emails + unidade para implementar.
+
       const result = {
         access: {
           apelido:  String(data[i][2]||'').trim().split(' ')[0] || email.split('@')[0],
